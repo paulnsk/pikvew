@@ -410,9 +410,6 @@ public partial class MainWindow
     private void BringTreeHeaderIntoView(TreeViewItem item)
     {
         item.BringIntoView(new Rect(0, 0, 1, 26));
-        if (FindVisual<ScrollViewer>(FolderTree) is not { } scroll) return;
-        var left = item.TranslatePoint(new Point(), FolderTree).X + scroll.HorizontalOffset;
-        scroll.ScrollToHorizontalOffset(Math.Max(0, left - Math.Max(40, scroll.ViewportWidth - 80)));
     }
     private void OnBrowserWheel(object sender, MouseWheelEventArgs e)
     {

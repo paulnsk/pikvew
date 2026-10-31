@@ -17,7 +17,7 @@ public static class AssociationDialog
         var root = new DockPanel { Margin = new Thickness(18) };
         var description = new TextBlock
         {
-            Text = "Choose the file types Pikvew should offer to open. Windows Settings will open next so you can confirm your default app. Register again if you move Pikvew.exe.",
+            Text = "Choose the file types Pikvew should offer to open. Unchecking removes a type from this registration; it does not change an existing default app. Choose a different default in Windows Settings, which will open next. Register again if you move Pikvew.exe.",
             TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12)
         };
         DockPanel.SetDock(description, Dock.Top);
@@ -32,7 +32,7 @@ public static class AssociationDialog
         root.Children.Add(actions);
         var checks = ImageLoader.SupportedExtensions.Select(e => new CheckBox
         {
-            Content = e, IsChecked = registered.Count == 0 || registered.Contains(e, StringComparer.OrdinalIgnoreCase),
+            Content = e, IsChecked = registered.Contains(e, StringComparer.OrdinalIgnoreCase),
             Margin = new Thickness(6), Width = 90
         }).ToArray();
         var selection = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };

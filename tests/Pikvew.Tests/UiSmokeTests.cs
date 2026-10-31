@@ -19,6 +19,54 @@ namespace Pikvew.Tests;
 
 public sealed class UiSmokeTests
 {
+    [Theory]
+    [InlineData(0)]
+    [InlineData(80)]
+    public Task FolderTreeKeepsHorizontalPositionWhileExpandingAndRevealing(double offset) => RunStaAsync(async () =>
+    {
+        var tree = new TreeView
+        {
+            ItemsPanel = new ItemsPanelTemplate(new FrameworkElementFactory(typeof(DirectoryTreePanel)))
+        };
+        VirtualizingPanel.SetIsVirtualizing(tree, true);
+        for (var i = 0; i < 120; i++) tree.Items.Add(new TreeViewItem { Header = $"Folder {i} " + new string('w', 110) });
+        var branch = (TreeViewItem)tree.Items[0];
+        branch.Items.Add(new TreeViewItem { Header = "Child folder" });
+        var selected = (TreeViewItem)tree.Items[1];
+        selected.IsSelected = true;
+        var window = new Window { Content = tree, Width = 260, Height = 240, ShowActivated = false, ShowInTaskbar = false, Left = -20000, Top = -20000 };
+        try
+        {
+            window.Show();
+            window.UpdateLayout();
+            var scroll = FindVisual<ScrollViewer>(tree)!;
+            Assert.True(scroll.ScrollableWidth > offset);
+            scroll.ScrollToHorizontalOffset(offset);
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            var horizontalMoves = new List<double>();
+            scroll.ScrollChanged += (_, e) => { if (e.HorizontalChange != 0) horizontalMoves.Add(e.HorizontalChange); };
+
+            // Expanding another branch must leave both the selection and horizontal view alone.
+            branch.IsExpanded = true;
+            branch.BringIntoView();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            Assert.Same(selected, tree.SelectedItem);
+            Assert.Equal(offset, scroll.HorizontalOffset, 2);
+
+            var panel = FindVisual<DirectoryTreePanel>(tree)!;
+            panel.Realize(110);
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            var distant = (TreeViewItem)tree.Items[110];
+            distant.IsSelected = true;
+            distant.BringIntoView();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            Assert.True(scroll.VerticalOffset > 0);
+            Assert.Equal(offset, scroll.HorizontalOffset, 2);
+            Assert.Empty(horizontalMoves); // Catch intermediate jumps, even if the final offset was restored.
+        }
+        finally { window.Close(); }
+    });
+
     [Fact]
     public Task BrowserViewerAnimationAndFullscreenWorkTogether() => RunStaAsync(async () =>
     {

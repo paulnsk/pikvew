@@ -4,6 +4,26 @@
 
 ## Текущее состояние
 
+- Пятый проход: горизонтальные рывки дерева при выборе/раскрытии. Убран явный
+  ScrollToHorizontalOffset из BringTreeHeaderIntoView; DirectoryTreePanel реализует
+  IScrollInfo.MakeVisible с видимым горизонтальным срезом, оставляя WPF вертикальную
+  прокрутку/виртуализацию. Горизонтальная прокрутка остаётся ручной.
+- В AssociationDialog уточнено: снятая галочка убирает capability/OpenWithProgid /
+  SupportedTypes, но НЕ сбрасывает уже выбранную пользователем default association.
+  Иначе можно было бы оставить UserChoice, указывающий на удалённый ProgID; сам ProgID
+  сохраняется. Для смены default выбрать другую программу в Windows Settings.
+  Пустой зарегистрированный набор теперь отображается пустым, без автоматического
+  включения всех галочек. Для первичной массовой регистрации есть Select all.
+- Пользователь сообщил, что queued-вопросы не видны в его консоли. Больше не вызывать
+  request_user_input_async; при необходимости остановиться и спросить обычным текстом.
+  Правило добавлено в AGENTS.md. UNC MP4 был на другом компьютере, пример недоступен;
+  задержку VLC не воспроизвели, не чиним предположениями, дополнительные пути не просим.
+- Проверка пятого прохода: Debug build успешен; два целевых WPF regression tests
+  FolderTreeKeepsHorizontalPositionWhileExpandingAndRevealing прошли для offset 0/80.
+  Проверены expand невыбранной ветки, сохранение selection, vertical reveal дальнего
+  узла и отсутствие промежуточных horizontal ScrollChanged. Rider inspections чистые.
+  Полный suite и publish не запускались, опубликованный EXE прежний.
+
 - Четвёртый проход: пользователь разрешил ассоциации и попросил Ctrl+arrows для
   дерева без перевода фокуса, Open default + Open with на unsupported и app icon.
   Реализованы кнопка File associations с checkbox-диалогом, HKCU Capabilities /
