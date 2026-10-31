@@ -273,8 +273,8 @@ public partial class MainWindow
             case Key.Divide: case Key.OemQuestion: ImageCanvas.ActualSize(); break;
             case Key.Multiply: ImageCanvas.Fit(); break;
             case Key.D8 when (Keyboard.Modifiers & ModifierKeys.Shift) != 0: ImageCanvas.Fit(); break;
-            case Key.Left: ImageCanvas.Pan(80, 0); break;
-            case Key.Right: ImageCanvas.Pan(-80, 0); break;
+            case Key.Left: if (ctrl) ImageCanvas.Rotate(-1); else ImageCanvas.Pan(80, 0); break;
+            case Key.Right: if (ctrl) ImageCanvas.Rotate(1); else ImageCanvas.Pan(-80, 0); break;
             case Key.Up: ImageCanvas.Pan(0, 80); break;
             case Key.Down: ImageCanvas.Pan(0, -80); break;
             case Key.Space: _model.Playback.Toggle(); break;
@@ -325,9 +325,16 @@ public partial class MainWindow
     private async void OnDirectorySelected(object sender, RoutedPropertyChangedEventArgs<object> e)
     {
         if (_model.Browser.IsSynchronizingTreeSelection) return;
+        if (e.NewValue is DirectoryNode selected) _ = selected.ProbeChildrenAsync(refresh: true);
         if (e.NewValue is DirectoryNode { Path.Length: > 0 } node && !string.Equals(node.Path, _model.Browser.DirectoryPath, StringComparison.OrdinalIgnoreCase))
             await RunAsync(() => OpenFolderAsync(node.Path));
     }
+    private void OnTreeItemLoaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is TreeViewItem { DataContext: DirectoryNode node }) _ = node.ProbeChildrenAsync();
+    }
+    private void OnRotateLeft(object sender, RoutedEventArgs e) => ImageCanvas.Rotate(-1);
+    private void OnRotateRight(object sender, RoutedEventArgs e) => ImageCanvas.Rotate(1);
     private void OnTreeItemSelected(object sender, RoutedEventArgs e)
     {
         if (!ReferenceEquals(sender, e.OriginalSource) || sender is not TreeViewItem item) return;

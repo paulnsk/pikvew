@@ -17,6 +17,7 @@
       <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}" />
       <Setter Property="ItemsPanel"><Setter.Value><ItemsPanelTemplate><controls:DirectoryTreePanel /></ItemsPanelTemplate></Setter.Value></Setter>
       <EventSetter Event="Selected" Handler="OnTreeItemSelected" />
+      <EventSetter Event="Loaded" Handler="OnTreeItemLoaded" />
     </Style>
     <Style x:Key="ToolbarButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
       <Setter Property="Margin" Value="3,0" />
@@ -157,6 +158,12 @@
           </TextBlock>
           <DockPanel>
             <Button DockPanel.Dock="Left" Content="Browser" Click="OnShowBrowser" Style="{StaticResource ToolbarButton}" ToolTip="Enter / double-click" />
+            <Button DockPanel.Dock="Left" Click="OnRotateLeft" Style="{StaticResource ToolbarButton}" ToolTip="Rotate counterclockwise (Ctrl+Left)" AutomationProperties.Name="Rotate counterclockwise">
+              <Path Data="M15,6 A7,7 0 1 0 17,12 M15,1 V6 H10" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.7" Width="18" Height="18" Stretch="Uniform"><Path.LayoutTransform><ScaleTransform ScaleX="-1" /></Path.LayoutTransform></Path>
+            </Button>
+            <Button DockPanel.Dock="Left" Click="OnRotateRight" Style="{StaticResource ToolbarButton}" ToolTip="Rotate clockwise (Ctrl+Right)" AutomationProperties.Name="Rotate clockwise">
+              <Path Data="M15,6 A7,7 0 1 0 17,12 M15,1 V6 H10" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.7" Width="18" Height="18" Stretch="Uniform" />
+            </Button>
             <Button x:Name="FullscreenButton" DockPanel.Dock="Right" Click="OnFullscreen" Style="{StaticResource ToolbarButton}" ToolTip="Fullscreen (Ctrl+Enter / middle click)" AutomationProperties.Name="Fullscreen">
               <Path x:Name="FullscreenGlyph" Data="M1,7V1H7 M13,1H19V7 M19,13V19H13 M7,19H1V13" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.8" Width="18" Height="18" Stretch="Uniform" />
             </Button>

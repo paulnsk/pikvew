@@ -36,6 +36,9 @@ An extension being recognized does not guarantee every variant of that format is
 | / | 100%: one image pixel per physical screen pixel |
 | * | Fit, including small images; remember this preference for subsequent images |
 | Drag / arrow keys | Pan an enlarged image |
+| Mouse down on a reduced image | Switch to 100% around the cursor; continue holding to pan |
+| Click an enlarged image without dragging | Return to fit |
+| Ctrl+Left / Ctrl+Right | Rotate the view 90° counterclockwise / clockwise |
 | Space | Play / pause animation |
 | , / . | Previous / next frame, paused |
 | Del / Ctrl+Del | Recycle / permanently delete |

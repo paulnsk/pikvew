@@ -12,6 +12,10 @@ public sealed class ImageViewport : FrameworkElement
     private BitmapSource? _source;
     private BitmapSource? _preview;
     private Point? _drag;
+    private Point _pressPosition;
+    private bool _panned;
+    private bool _expandedOnPress;
+    private int _quarterTurns;
     private int _fitMode = 1; // 0: manual, 1: initial fit without enlargement, 2: explicit fit.
     private static readonly Brush Checker = CreateChecker();
     public event Action<double>? ScaleChanged;
@@ -29,18 +33,40 @@ public sealed class ImageViewport : FrameworkElement
         SizeChanged += (_, _) => Resize();
         MouseLeftButtonDown += (_, e) =>
         {
-            if (e.ClickCount != 1) return;
+            if (e.ClickCount != 1 || _source is null || Keyboard.Modifiers != ModifierKeys.None) return;
+            var position = e.GetPosition(this);
+            var dpi = VisualTreeHelper.GetDpi(this);
+            if (!new Rect(_viewport.X / dpi.DpiScaleX, _viewport.Y / dpi.DpiScaleY,
+                    _viewport.ImageWidth * Scale / dpi.DpiScaleX, _viewport.ImageHeight * Scale / dpi.DpiScaleY).Contains(position)) return;
             Focus();
-            _drag = e.GetPosition(this);
+            _pressPosition = position;
+            _panned = false;
+            _expandedOnPress = Scale < 1 - 0.00001;
+            if (_expandedOnPress) ZoomTo(1, position);
+            _drag = position;
             CaptureMouse();
         };
-        MouseLeftButtonUp += (_, _) => { _drag = null; ReleaseMouseCapture(); Cursor = Cursors.Arrow; };
+        MouseLeftButtonUp += (_, e) =>
+        {
+            var released = e.GetPosition(this);
+            var clicked = _drag is not null && !_panned
+                && Math.Abs(released.X - _pressPosition.X) < SystemParameters.MinimumHorizontalDragDistance
+                && Math.Abs(released.Y - _pressPosition.Y) < SystemParameters.MinimumVerticalDragDistance;
+            if (clicked && !_expandedOnPress && (_viewport.ImageWidth * Scale > _viewport.Width || _viewport.ImageHeight * Scale > _viewport.Height))
+            { _fitMode = 1; _viewport.Fit(false); Changed(); }
+            _drag = null;
+            ReleaseMouseCapture();
+            Cursor = Cursors.Arrow;
+        };
         LostMouseCapture += (_, _) => _drag = null;
         MouseMove += (_, e) =>
         {
             if (_drag is not { } previous) return;
-            _fitMode = 0;
             var position = e.GetPosition(this);
+            if (!_panned && Math.Abs(position.X - _pressPosition.X) < SystemParameters.MinimumHorizontalDragDistance
+                && Math.Abs(position.Y - _pressPosition.Y) < SystemParameters.MinimumVerticalDragDistance) return;
+            _panned = true;
+            _fitMode = 0;
             var dpi = VisualTreeHelper.GetDpi(this);
             _viewport.Pan((position.X - previous.X) * dpi.DpiScaleX, (position.Y - previous.Y) * dpi.DpiScaleY);
             _drag = position;
@@ -56,6 +82,7 @@ public sealed class ImageViewport : FrameworkElement
         Resize();
         if (source is not null && reset)
         {
+            _quarterTurns = 0;
             _fitMode = EnlargeSmallImages ? 2 : 1;
             _viewport.SetImage(source.PixelWidth, source.PixelHeight);
             if (EnlargeSmallImages) _viewport.Fit(true);
@@ -67,6 +94,18 @@ public sealed class ImageViewport : FrameworkElement
     public void ActualSize() { EnlargeSmallImages = false; FitPreferenceChanged?.Invoke(false); ZoomTo(1, new Point(ActualWidth / 2, ActualHeight / 2)); }
     public void Zoom(double factor, Point? anchor = null) => ZoomTo(_viewport.Scale * factor, anchor ?? new Point(ActualWidth / 2, ActualHeight / 2));
     public void Pan(double dx, double dy) { _fitMode = 0; _viewport.Pan(dx, dy); InvalidateVisual(); }
+    public void Rotate(int quarterTurns)
+    {
+        if (_source is null) return;
+        var scale = Scale;
+        var fitMode = _fitMode;
+        _quarterTurns = ((_quarterTurns + quarterTurns) % 4 + 4) % 4;
+        var sideways = _quarterTurns % 2 != 0;
+        _viewport.SetImage(sideways ? _source.PixelHeight : _source.PixelWidth, sideways ? _source.PixelWidth : _source.PixelHeight);
+        if (fitMode == 0) _viewport.Zoom(scale, _viewport.Width / 2, _viewport.Height / 2);
+        else _viewport.Fit(fitMode == 2);
+        Changed();
+    }
     private void ZoomTo(double scale, Point anchor)
     {
         _fitMode = 0;
@@ -95,11 +134,24 @@ public sealed class ImageViewport : FrameworkElement
         if (_source is null) return;
         var dpi = VisualTreeHelper.GetDpi(this);
         var rect = new Rect(_viewport.X / dpi.DpiScaleX, _viewport.Y / dpi.DpiScaleY,
-            _source.PixelWidth * _viewport.Scale / dpi.DpiScaleX, _source.PixelHeight * _viewport.Scale / dpi.DpiScaleY);
+            _viewport.ImageWidth * Scale / dpi.DpiScaleX, _viewport.ImageHeight * Scale / dpi.DpiScaleY);
         var background = Transparency switch { "White" => Brushes.White, "Checkerboard" => Checker, _ => Brushes.Black };
         drawingContext.DrawRectangle(background, null, rect);
-        var displayed = _preview is not null && rect.Width * dpi.DpiScaleX <= _preview.PixelWidth && rect.Height * dpi.DpiScaleY <= _preview.PixelHeight ? _preview : _source;
-        drawingContext.DrawImage(displayed, rect);
+        var displayed = _preview is not null && _source.PixelWidth * Scale <= _preview.PixelWidth && _source.PixelHeight * Scale <= _preview.PixelHeight ? _preview : _source;
+        drawingContext.PushTransform(new TranslateTransform(rect.X, rect.Y));
+        drawingContext.PushTransform(new ScaleTransform(Scale / dpi.DpiScaleX, Scale / dpi.DpiScaleY));
+        var rotation = _quarterTurns switch
+        {
+            1 => new Matrix(0, 1, -1, 0, _source.PixelHeight, 0),
+            2 => new Matrix(-1, 0, 0, -1, _source.PixelWidth, _source.PixelHeight),
+            3 => new Matrix(0, -1, 1, 0, 0, _source.PixelWidth),
+            _ => Matrix.Identity
+        };
+        drawingContext.PushTransform(new MatrixTransform(rotation));
+        drawingContext.DrawImage(displayed, new Rect(0, 0, _source.PixelWidth, _source.PixelHeight));
+        drawingContext.Pop();
+        drawingContext.Pop();
+        drawingContext.Pop();
     }
 
     private static Brush CreateChecker()
