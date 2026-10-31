@@ -6,7 +6,7 @@ namespace Pikvew.App.Infrastructure;
 
 public static class AssociationDialog
 {
-    public static string[]? Choose(Window owner, IReadOnlyCollection<string> registered)
+    public static (string[] Extensions, bool Remove)? Choose(Window owner)
     {
         var dialog = new Window
         {
@@ -15,26 +15,29 @@ public static class AssociationDialog
             Background = owner.Background, Foreground = owner.Foreground
         };
         var root = new DockPanel { Margin = new Thickness(18) };
-        var description = new TextBlock
-        {
-            Text = "Choose the file types Pikvew should offer to open. Unchecking removes a type from this registration; it does not change an existing default app. Choose a different default in Windows Settings, which will open next. Register again if you move Pikvew.exe.",
-            TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12)
-        };
-        DockPanel.SetDock(description, Dock.Top);
-        root.Children.Add(description);
         var actions = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 12, 0, 0) };
         var cancel = new Button { Content = "Cancel", IsCancel = true, Margin = new Thickness(0, 0, 8, 0) };
-        var apply = new Button { Content = "Register and choose defaults…", IsDefault = true };
-        apply.Click += (_, _) => dialog.DialogResult = true;
+        var add = new Button { Content = "Add registration", IsDefault = true, IsEnabled = false, Margin = new Thickness(0, 0, 8, 0) };
+        var remove = new Button { Content = "Remove registration", IsEnabled = false };
+        var removeSelected = false;
+        add.Click += (_, _) => { removeSelected = false; dialog.DialogResult = true; };
+        remove.Click += (_, _) => { removeSelected = true; dialog.DialogResult = true; };
         actions.Children.Add(cancel);
-        actions.Children.Add(apply);
+        actions.Children.Add(add);
+        actions.Children.Add(remove);
         DockPanel.SetDock(actions, Dock.Bottom);
         root.Children.Add(actions);
         var checks = ImageLoader.SupportedExtensions.Select(e => new CheckBox
         {
-            Content = e, IsChecked = registered.Contains(e, StringComparer.OrdinalIgnoreCase),
+            Content = e, IsChecked = false,
             Margin = new Thickness(6), Width = 90
         }).ToArray();
+        foreach (var check in checks)
+        {
+            void UpdateActions(object sender, RoutedEventArgs e) => add.IsEnabled = remove.IsEnabled = checks.Any(c => c.IsChecked == true);
+            check.Checked += UpdateActions;
+            check.Unchecked += UpdateActions;
+        }
         var selection = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
         foreach (var (label, value) in new[] { ("Select all", true), ("Clear", false) })
         {
@@ -48,6 +51,8 @@ public static class AssociationDialog
         foreach (var check in checks) grid.Children.Add(check);
         root.Children.Add(new ScrollViewer { Content = grid, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
         dialog.Content = root;
-        return dialog.ShowDialog() == true ? checks.Where(c => c.IsChecked == true).Select(c => (string)c.Content).ToArray() : null;
+        return dialog.ShowDialog() == true
+            ? (checks.Where(c => c.IsChecked == true).Select(c => (string)c.Content).ToArray(), removeSelected)
+            : null;
     }
 }

@@ -526,11 +526,13 @@ public partial class MainWindow
         await RunAsync(async () =>
         {
             var associations = new FileAssociations();
-            var registered = await Task.Run(associations.ReadRegisteredExtensions);
-            var selected = AssociationDialog.Choose(this, registered);
-            if (selected is null) return;
+            if (AssociationDialog.Choose(this) is not { } selected) return;
             var executable = Environment.ProcessPath ?? throw new InvalidOperationException("Cannot locate Pikvew.exe.");
-            await Task.Run(() => associations.Register(executable, selected));
+            await Task.Run(() =>
+            {
+                if (selected.Remove) associations.Remove(executable, selected.Extensions);
+                else associations.Add(executable, selected.Extensions);
+            });
             WindowsShell.OpenDefaultAppSettings();
         });
     }

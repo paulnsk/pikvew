@@ -13,7 +13,13 @@ public sealed class FileAssociations(string registryRoot = "Software")
         return key?.GetValueNames() ?? [];
     }
 
-    public void Register(string executable, IEnumerable<string> extensions)
+    public void Add(string executable, IEnumerable<string> extensions) =>
+        Register(executable, ReadRegisteredExtensions().Union(extensions, StringComparer.OrdinalIgnoreCase));
+
+    public void Remove(string executable, IEnumerable<string> extensions) =>
+        Register(executable, ReadRegisteredExtensions().Except(extensions, StringComparer.OrdinalIgnoreCase));
+
+    private void Register(string executable, IEnumerable<string> extensions)
     {
         if (!Path.IsPathFullyQualified(executable) || executable.Contains('"')) throw new ArgumentException("An absolute executable path is required.", nameof(executable));
         var selected = extensions.ToHashSet(StringComparer.OrdinalIgnoreCase);

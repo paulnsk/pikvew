@@ -34,7 +34,7 @@ public sealed class ShellIntegrationTests
     }
 
     [RegistryFact]
-    public void RegistrationOffersOnlySelectedTypesAndPreservesExistingDefaultChoices()
+    public void AddingAndRemovingSelectedRegistrationsPreservesOtherTypesAndDefaultChoices()
     {
         var root = @"Software\Pikvew.Tests\Associations-" + Guid.NewGuid().ToString("N");
         try
@@ -44,12 +44,15 @@ public sealed class ShellIntegrationTests
             using (var choice = Registry.CurrentUser.CreateSubKey(root + @"\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.png\UserChoice"))
                 choice.SetValue("ProgId", "Other.Image");
             var associations = new FileAssociations(root);
-            associations.Register(@"C:\tools with spaces\Pikvew.exe", [".png", ".webp"]);
-            Assert.Equal([".png", ".webp"], associations.ReadRegisteredExtensions().Order());
+            associations.Add(@"C:\tools with spaces\Pikvew.exe", [".png", ".webp"]);
+            associations.Add(@"C:\tools with spaces\Pikvew.exe", [".gif", ".PNG"]);
+            Assert.Equal([".gif", ".png", ".webp"], associations.ReadRegisteredExtensions().Select(e => e.ToLowerInvariant()).Order());
             using (var command = Registry.CurrentUser.OpenSubKey(root + @"\Classes\Pikvew.Image\shell\open\command"))
                 Assert.Equal("\"C:\\tools with spaces\\Pikvew.exe\" \"%1\"", command!.GetValue(""));
-            associations.Register(@"C:\tools\Pikvew.exe", [".webp"]);
-            Assert.Equal([".webp"], associations.ReadRegisteredExtensions());
+            associations.Remove(@"C:\tools\Pikvew.exe", [".PNG", ".jpg"]);
+            Assert.Equal([".gif", ".webp"], associations.ReadRegisteredExtensions().Order());
+            using (var offered = Registry.CurrentUser.OpenSubKey(root + @"\Classes\.gif\OpenWithProgids"))
+                Assert.NotNull(offered!.GetValue("Pikvew.Image"));
             using (var extension = Registry.CurrentUser.OpenSubKey(root + @"\Classes\.png"))
                 Assert.Equal("Other.Image", extension!.GetValue(""));
             using (var choice = Registry.CurrentUser.OpenSubKey(root + @"\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.png\UserChoice"))
