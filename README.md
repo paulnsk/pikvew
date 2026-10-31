@@ -39,6 +39,8 @@ An extension being recognized does not guarantee every variant of that format is
 | Mouse down on a reduced image | Switch to 100% around the cursor; continue holding to pan |
 | Click an enlarged image without dragging | Return to fit |
 | Ctrl+Left / Ctrl+Right | Rotate the view 90° counterclockwise / clockwise |
+| Ctrl+arrows (browser) | Navigate / expand / collapse the folder tree without moving focus |
+| Enter (unsupported file) | Open in the Windows default application |
 | Space | Play / pause animation |
 | , / . | Previous / next frame, paused |
 | Del / Ctrl+Del | Recycle / permanently delete |

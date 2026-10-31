@@ -34,6 +34,7 @@ public partial class MainWindow
     private double _browserOffset;
     private bool _restoringSelection;
     private int _openRequestVersion;
+    private int _treeNavigationVersion;
 
     public MainWindow(MainViewModel model, UserSettings settings, RegistrySettingsStore settingsStore, FileOperations operations)
     {
@@ -85,6 +86,7 @@ public partial class MainWindow
     public async Task OpenArgumentsAsync(string[] arguments)
     {
         if (_closing) return;
+        ++_treeNavigationVersion;
         var version = ++_openRequestVersion;
         if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
         Activate();
@@ -126,7 +128,7 @@ public partial class MainWindow
     {
         if (e.PropertyName == nameof(MainViewModel.IsViewing)) UpdateView(_model.IsViewing);
         if (e.PropertyName is nameof(MainViewModel.Message) or nameof(MainViewModel.IsLoading))
-            UnsupportedOpenWith.Visibility = !_model.IsLoading && _model.Playback.Document is null && !string.IsNullOrEmpty(_model.CurrentPath)
+            UnsupportedActions.Visibility = !_model.IsLoading && _model.Playback.Document is null && !string.IsNullOrEmpty(_model.CurrentPath)
                 ? Visibility.Visible : Visibility.Collapsed;
     }
 
@@ -197,6 +199,7 @@ public partial class MainWindow
     {
         if (_model.IsViewing) { ShowBrowser(); return; }
         if (Files.SelectedItem is not FileItem item) return;
+        if (!item.Supported) { await WindowsShell.OpenAsync(item.Path); return; }
         RememberBrowser();
         UpdateView(true);
         _placement.SetFullscreen(_settings.Fullscreen);
@@ -230,6 +233,8 @@ public partial class MainWindow
 
     private nint WindowMessage(nint hwnd, int message, nint wparam, nint lparam, ref bool handled)
     {
+        if (message == 0x000A && WindowsShell.IsOpenWithActive) // WM_ENABLE: native chooser disables/re-enables its owner.
+            ShellLaunchLog.Write($"OpenWith owner enabled={wparam != 0}");
         if (message is 0x007E or 0x02E0) // WM_DISPLAYCHANGE / WM_DPICHANGED
             Dispatcher.InvokeAsync(_placement.EnsureFullscreenMonitor, DispatcherPriority.Loaded);
         return 0;
@@ -246,11 +251,21 @@ public partial class MainWindow
             return;
         }
         if (Keyboard.FocusedElement is TextBoxBase || Keyboard.FocusedElement is ComboBox) return;
+        if (!_model.IsViewing && ctrl && e.Key is Key.Left or Key.Right or Key.Up or Key.Down)
+        {
+            e.Handled = true;
+            var direction = e.Key switch { Key.Left => TreeDirection.Left, Key.Right => TreeDirection.Right, Key.Up => TreeDirection.Up, _ => TreeDirection.Down };
+            await RunAsync(() => NavigateTreeAsync(direction));
+            return;
+        }
         if (!_model.IsViewing && FolderTree.IsKeyboardFocusWithin) return;
         if (e.Key == Key.Enter)
         {
             e.Handled = true;
-            if (ctrl) ToggleFullscreen(); else await RunAsync(ToggleViewAsync);
+            if (ctrl) ToggleFullscreen();
+            else if (_model.IsViewing && _model.Playback.Document is null && !_model.IsLoading && !string.IsNullOrEmpty(_model.CurrentPath))
+                await RunAsync(() => WindowsShell.OpenAsync(_model.CurrentPath));
+            else await RunAsync(ToggleViewAsync);
             return;
         }
         if (e.Key == Key.Delete) { e.Handled = true; await DeleteAsync(ctrl); return; }
@@ -308,6 +323,7 @@ public partial class MainWindow
     }
     private async void OnFilesDoubleClick(object sender, MouseButtonEventArgs e)
     {
+        if (FindParent<Button>(e.OriginalSource as DependencyObject) is not null) return;
         if (e.ChangedButton == MouseButton.Left && FindParent<ListBoxItem>(e.OriginalSource as DependencyObject) is not null)
             await RunAsync(ToggleViewAsync);
     }
@@ -327,7 +343,10 @@ public partial class MainWindow
         if (_model.Browser.IsSynchronizingTreeSelection) return;
         if (e.NewValue is DirectoryNode selected) _ = selected.ProbeChildrenAsync(refresh: true);
         if (e.NewValue is DirectoryNode { Path.Length: > 0 } node && !string.Equals(node.Path, _model.Browser.DirectoryPath, StringComparison.OrdinalIgnoreCase))
+        {
+            ++_treeNavigationVersion;
             await RunAsync(() => OpenFolderAsync(node.Path));
+        }
     }
     private void OnTreeItemLoaded(object sender, RoutedEventArgs e)
     {
@@ -379,6 +398,14 @@ public partial class MainWindow
                 candidates = node.Children;
             }
         }, DispatcherPriority.Loaded);
+    }
+    private async Task NavigateTreeAsync(TreeDirection direction)
+    {
+        var version = ++_treeNavigationVersion;
+        var next = await DirectoryNavigation.MoveAsync(_model.Browser.Roots, _model.Browser.DirectoryPath, direction);
+        if (next is null || version != _treeNavigationVersion || _model.IsViewing) return;
+        if (!string.Equals(next.Path, _model.Browser.DirectoryPath, StringComparison.OrdinalIgnoreCase)) await OpenFolderAsync(next.Path);
+        if (version == _treeNavigationVersion && !_model.IsViewing) await RevealTreeAsync();
     }
     private void BringTreeHeaderIntoView(TreeViewItem item)
     {
@@ -490,6 +517,25 @@ public partial class MainWindow
         e.Handled = true;
         if (sender is FrameworkElement { DataContext: FileItem file })
             await RunAsync(() => { WindowsShell.OpenWith(this, file.Path); return Task.CompletedTask; });
+    }
+    private async void OnOpen(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        var path = sender is FrameworkElement { DataContext: FileItem file } ? file.Path : SelectedPaths().FirstOrDefault();
+        if (!string.IsNullOrEmpty(path)) await RunAsync(() => WindowsShell.OpenAsync(path));
+    }
+    private async void OnAssociations(object sender, RoutedEventArgs e)
+    {
+        await RunAsync(async () =>
+        {
+            var associations = new FileAssociations();
+            var registered = await Task.Run(associations.ReadRegisteredExtensions);
+            var selected = AssociationDialog.Choose(this, registered);
+            if (selected is null) return;
+            var executable = Environment.ProcessPath ?? throw new InvalidOperationException("Cannot locate Pikvew.exe.");
+            await Task.Run(() => associations.Register(executable, selected));
+            WindowsShell.OpenDefaultAppSettings();
+        });
     }
     private async void OnCopyTo(object sender, RoutedEventArgs e) => await TransferAsync(false);
     private async void OnMoveTo(object sender, RoutedEventArgs e) => await TransferAsync(true);

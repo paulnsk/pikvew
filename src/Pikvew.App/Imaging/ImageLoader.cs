@@ -16,6 +16,7 @@ public sealed class ImageLoader
         StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _decodeSlots = new(2, 2);
     private readonly SemaphoreSlim _thumbnailSlots = new(2, 2);
+    public static IReadOnlyList<string> SupportedExtensions { get; } = Extensions.Select(e => "." + e).Order(StringComparer.Ordinal).ToArray();
 
     public bool IsSupported(string path) => Extensions.Contains(Path.GetExtension(path).TrimStart('.'));
 

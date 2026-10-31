@@ -33,6 +33,7 @@
       <MenuItem Header="Move to folder…" Click="OnMoveTo" />
       <MenuItem Header="Delete" InputGestureText="Del" Click="OnDelete" />
       <Separator />
+      <MenuItem Header="Open" Click="OnOpen" />
       <MenuItem Header="Open with…" Click="OnOpenWith" />
     </ContextMenu>
   </Window.Resources>
@@ -40,6 +41,7 @@
     <Grid x:Name="BrowserRoot" PreviewMouseWheel="OnBrowserWheel">
       <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
       <DockPanel Margin="10,7">
+        <Button DockPanel.Dock="Right" Content="File associations…" Click="OnAssociations" Margin="12,0,0,0" Padding="9,4" />
         <CheckBox DockPanel.Dock="Left" Content="Supported formats only" IsChecked="{Binding Browser.SupportedOnly}"
                   VerticalAlignment="Center" Margin="0,0,12,0" />
         <ComboBox DockPanel.Dock="Left" ItemsSource="{Binding Browser.SortOptions}" SelectedItem="{Binding Browser.Sort}"
@@ -49,7 +51,7 @@
         <ScrollViewer HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled" Margin="12,0">
           <ItemsControl ItemsSource="{Binding Browser.Breadcrumbs}">
             <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
-            <ItemsControl.ItemTemplate><DataTemplate>
+            <ItemsControl.ItemTemplate><DataTemplate DataType="{x:Type browser:BreadcrumbPart}">
               <StackPanel Orientation="Horizontal"><Button Content="{Binding Name}" Click="OnBreadcrumbClick" Padding="6,4" BorderThickness="0" Background="Transparent" /><TextBlock Text="›" VerticalAlignment="Center" Opacity="0.5" Margin="3,0" /></StackPanel>
             </DataTemplate></ItemsControl.ItemTemplate>
           </ItemsControl>
@@ -92,21 +94,29 @@
             </Style>
           </ListBox.ItemContainerStyle>
           <ListBox.ItemTemplate>
-            <DataTemplate>
+            <DataTemplate DataType="{x:Type browser:FileItem}">
               <Grid ToolTip="{Binding Path}">
                 <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="22" /><RowDefinition Height="18" /></Grid.RowDefinitions>
                 <Border Background="{DynamicResource EditorBrush}" CornerRadius="4">
                   <Grid>
                     <TextBlock Text="{Binding Kind}" HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.5" />
                     <controls:ThumbnailImage Stretch="Uniform" />
-                    <Button Content="Open with…" Click="OnUnsupportedTileOpenWith" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
-                      <Button.Style>
-                        <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+                    <Grid>
+                      <Grid.Style>
+                        <Style TargetType="Grid">
                           <Setter Property="Visibility" Value="Collapsed" />
                           <Style.Triggers><DataTrigger Binding="{Binding Supported}" Value="False"><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers>
                         </Style>
-                      </Button.Style>
-                    </Button>
+                      </Grid.Style>
+                      <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                      <Button Click="OnOpen" ToolTip="Open with the default app (Enter)" Padding="4">
+                        <StackPanel>
+                          <controls:AssociatedAppIcon FilePath="{Binding Path}" Width="32" Height="32" Margin="0,0,0,5" />
+                          <TextBlock Text="Open" HorizontalAlignment="Center" />
+                        </StackPanel>
+                      </Button>
+                      <Button Grid.Row="1" Content="Open with…" Click="OnUnsupportedTileOpenWith" Margin="0,4,0,0" Padding="4" />
+                    </Grid>
                   </Grid>
                 </Border>
                 <TextBlock Grid.Row="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis" Margin="2,3,2,0" />
@@ -121,10 +131,14 @@
       <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
       <controls:ImageViewport x:Name="ImageCanvas" MouseWheel="OnViewerWheel"
                               MouseDown="OnViewerClick" ContextMenu="{StaticResource FileMenu}" />
-      <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="600" Margin="24">
+      <StackPanel Grid.Row="0" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="600" Margin="24">
         <TextBlock Text="{Binding Message}" Foreground="White" TextWrapping="Wrap" TextAlignment="Center" />
-        <Button x:Name="UnsupportedOpenWith" Content="Open with…" Click="OnOpenWith" Margin="0,16,0,0"
-                HorizontalAlignment="Center" Visibility="Collapsed" />
+        <StackPanel x:Name="UnsupportedActions" Orientation="Horizontal" HorizontalAlignment="Center" Visibility="Collapsed" Margin="0,16,0,0">
+          <Button Click="OnOpen" ToolTip="Open with the default app (Enter)" Margin="0,0,8,0">
+            <StackPanel Orientation="Horizontal"><controls:AssociatedAppIcon FilePath="{Binding CurrentPath}" Width="24" Height="24" Margin="0,0,8,0" /><TextBlock Text="Open" VerticalAlignment="Center" /></StackPanel>
+          </Button>
+          <Button x:Name="UnsupportedOpenWith" Content="Open with…" Click="OnOpenWith" />
+        </StackPanel>
       </StackPanel>
       <Border x:Name="ViewerToolbar" Grid.Row="1" Background="#EB161616" Padding="12,8">
         <StackPanel>

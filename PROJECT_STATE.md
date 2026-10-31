@@ -4,6 +4,35 @@
 
 ## Текущее состояние
 
+- Четвёртый проход: пользователь разрешил ассоциации и попросил Ctrl+arrows для
+  дерева без перевода фокуса, Open default + Open with на unsupported и app icon.
+  Реализованы кнопка File associations с checkbox-диалогом, HKCU Capabilities /
+  RegisteredApplications / ProgID / OpenWithProgids. Default/UserChoice не меняем:
+  Windows 10/11 требует системное подтверждение; после регистрации открываем
+  Settings (Windows 11 deep link registeredAppUser=Pikvew, Windows 10 общая страница).
+  Регистрация по текущему расположению exe, после переноса нужно повторить.
+- Unsupported: две кнопки в браузере и viewer, Open запускает ShellExecute open;
+  Enter в браузере и unsupported viewer делает Open, browser double-click тоже.
+  Default app icon через AssocQueryString(EXECUTABLE)+ExtractIconEx, fallback
+  extension-only SHGetFileInfo(USEFILEATTRIBUTES), фоновая очередь 2, cache 128
+  extensions/1 minute. Иконка не обращается к реальному UNC-файлу.
+- Ctrl+arrows в browser обходят видимые узлы/expand/collapse/parent/first child;
+  фокус сохраняется; текстовые поля/ComboBox сохраняют свои клавиши. Модельный
+  DirectoryNavigation покрыт тестом, регистрация покрыта изолированным RegistryFact.
+- Память: ThumbnailCache LRU 64 MiB; ThumbnailImage освобождает Source при Unloaded.
+  Это НЕ общий лимит процесса. ImagePreloader ограничен 4 документами (обычно 2
+  соседа), без бюджета decoded bytes; 128 MiB — только ограничение encoded размера
+  для speculative preload. GIF snapshot cache 512 MiB НА ДОКУМЕНТ, плюс decoder /
+  encoded data / first frame. Общую память не измеряли; Pikvew при осмотре не запущен.
+- Задержка Open with -> VLC на UNC: код сразу вызывает SHOpenWithDialog, запуск
+  выбранной программы полностью внутри Windows. Причина НЕ установлена, поведение
+  вызова/флаги не меняли. Добавлен bounded timing log %LOCALAPPDATA%\Pikvew\shell.log
+  (256 KiB + один .old): вход/возврат native API, WM_ENABLE owner, Default open.
+  Время SHOpenWithDialog включает время выбора пользователя. Запрошены полный
+  UNC-путь MP4 и сравнение с Explorer; до ответа не запускать случайные видео.
+- Этот проход: только Rider inspections, без build/test/publish по просьбе экономить
+  лимит. Новые тесты добавлены для пользовательского запуска. EXE пока прежний.
+
 - Третий проход (экономия лимита, пользователь разрешил не запускать проверки):
   1) compressed image mouse-down -> 100% у курсора + немедленная возможность pan;
   expanded image click-release без drag -> fit, порог движения системный.
