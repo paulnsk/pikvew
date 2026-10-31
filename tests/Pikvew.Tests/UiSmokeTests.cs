@@ -1,0 +1,134 @@
+using System.IO;
+using System.Threading;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using System.Windows.Threading;
+using ImageMagick;
+using Pikvew.App;
+using Pikvew.App.Browser;
+using Pikvew.App.Controls;
+using Pikvew.App.Imaging;
+using Pikvew.App.Infrastructure;
+using Pikvew.Core;
+using Xunit;
+
+namespace Pikvew.Tests;
+
+public sealed class UiSmokeTests
+{
+    [Fact]
+    public Task BrowserViewerAnimationAndFullscreenWorkTogether() => RunStaAsync(async () =>
+    {
+        var application = new App.App();
+        application.InitializeComponent();
+        var directory = Path.Combine(Path.GetTempPath(), "PikvewUI-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var settings = new UserSettings { LastDirectory = directory };
+        var loader = new ImageLoader();
+        var cache = new ThumbnailCache(loader);
+        var browser = new BrowserViewModel(loader, cache, settings, new FileCatalog());
+        var playback = new PlaybackController();
+        var model = new MainViewModel(loader, settings, browser, playback, new ImagePreloader(loader));
+        var window = new MainWindow(model, settings, new RegistrySettingsStore(@"Software\Pikvew.Tests\UI"), new FileOperations(settings))
+        { ShowActivated = false, ShowInTaskbar = false, Left = -20000, Top = -20000 };
+        try
+        {
+            var path = Path.Combine(directory, "1.gif");
+            using (var frames = new MagickImageCollection())
+            {
+                frames.Add(new MagickImage(MagickColors.Red, 32, 24) { AnimationDelay = 10 });
+                frames.Add(new MagickImage(MagickColors.Blue, 32, 24) { AnimationDelay = 30 });
+                frames.Write(path);
+            }
+            for (var i = 2; i <= 80; i++) File.Copy(path, Path.Combine(directory, $"{i}.gif"));
+            window.Show();
+            await window.InitializeAsync([path]);
+            Assert.True(model.IsViewing);
+            Assert.True(playback.IsAnimated);
+            Assert.Equal(EscapeAction.CloseApplication, model.Escape);
+            await Task.Delay(100);
+            var canvas = (ImageViewport)window.FindName("ImageCanvas");
+            Assert.NotNull(canvas.Source);
+            Assert.Equal(1, canvas.Scale);
+            playback.Toggle();
+            playback.Seek(0.2);
+            await Task.Delay(100);
+            Assert.Equal(1, playback.CurrentFrame);
+            playback.Step(-1);
+            Assert.Equal(0, playback.CurrentFrame);
+            canvas.ActualSize();
+            Assert.Equal(1, canvas.Scale);
+            canvas.Fit();
+            Assert.True(canvas.Scale > 1);
+
+            window.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(window)!, 0, Key.Enter)
+            { RoutedEvent = Keyboard.PreviewKeyDownEvent });
+            await Task.Delay(100);
+            Assert.False(model.IsViewing);
+            Assert.Equal(80, browser.Files.Count);
+            var list = (ListBox)window.FindName("Files");
+            list.SelectedIndex = 0;
+            window.UpdateLayout();
+            Assert.NotNull(list.ItemContainerGenerator.ContainerFromIndex(0));
+            Assert.Null(list.ItemContainerGenerator.ContainerFromIndex(79));
+            var screenshotRoot = Path.Combine(InternetCorpusTests.SampleDirectory, "..", "screenshots");
+            Directory.CreateDirectory(screenshotRoot);
+            Capture((FrameworkElement)window.Content, Path.Combine(screenshotRoot, "browser.png"));
+
+            await model.ShowImageAsync(path);
+            Assert.Equal(EscapeAction.ShowBrowser, model.Escape);
+            settings.Fullscreen = true;
+            await window.OpenArgumentsAsync([path]);
+            Assert.True(model.IsViewing);
+            Assert.Equal(WindowStyle.None, window.WindowStyle);
+            Capture((FrameworkElement)window.Content, Path.Combine(screenshotRoot, "viewer.png"));
+            Assert.Equal(EscapeAction.CloseApplication, model.Escape);
+            await model.NavigateAsync(1);
+            Assert.Equal("2.gif", model.FileName);
+            await model.NavigateAsync(0, last: true);
+            Assert.Equal("80.gif", model.FileName);
+            await model.NavigateAsync(1);
+            Assert.Equal("80.gif", model.FileName);
+        }
+        finally
+        {
+            window.Close();
+            await model.DisposeAsync();
+            Directory.Delete(directory, true);
+            application.Shutdown();
+        }
+    });
+
+    private static void Capture(FrameworkElement element, string path)
+    {
+        element.UpdateLayout();
+        var bitmap = new RenderTargetBitmap(Math.Max(1, (int)element.ActualWidth), Math.Max(1, (int)element.ActualHeight), 96, 96, PixelFormats.Pbgra32);
+        bitmap.Render(element);
+        var encoder = new PngBitmapEncoder();
+        encoder.Frames.Add(BitmapFrame.Create(bitmap));
+        using var file = File.Create(path);
+        encoder.Save(file);
+    }
+
+    private static Task RunStaAsync(Func<Task> action)
+    {
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var thread = new Thread(() =>
+        {
+            SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext());
+            Dispatcher.CurrentDispatcher.InvokeAsync(async () =>
+            {
+                try { await action(); completion.TrySetResult(); }
+                catch (Exception exception) { completion.TrySetException(exception); }
+                finally { Dispatcher.CurrentDispatcher.BeginInvokeShutdown(DispatcherPriority.Background); }
+            });
+            Dispatcher.Run();
+        }) { IsBackground = true };
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        return completion.Task.WaitAsync(TimeSpan.FromSeconds(45));
+    }
+}

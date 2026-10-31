@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Pikvew.Core/Pikvew.Core.csproj" />
+    <Project Path="src/Pikvew.App/Pikvew.App.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Pikvew.Tests/Pikvew.Tests.csproj" />
+  </Folder>
+</Solution>
