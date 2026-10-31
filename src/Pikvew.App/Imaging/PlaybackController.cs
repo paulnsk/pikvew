@@ -35,7 +35,7 @@ public sealed class PlaybackController : ObservableObject, IAsyncDisposable
         _timer.Tick += OnTick;
     }
 
-    public async Task SetDocumentAsync(ImageDocument? document)
+    public async Task SetDocumentAsync(ImageDocument? document, bool disposePrevious = true)
     {
         var previous = _document;
         _document = document;
@@ -48,7 +48,7 @@ public sealed class PlaybackController : ObservableObject, IAsyncDisposable
         foreach (var name in new[] { nameof(Document), nameof(IsAnimated), nameof(Duration), nameof(TimeLabel) }) Raise(name);
         if (document is not null) FrameReady?.Invoke(document.FirstFrame);
         UpdateClock();
-        if (previous is not null && !ReferenceEquals(previous, document)) await previous.DisposeAsync();
+        if (disposePrevious && previous is not null && !ReferenceEquals(previous, document)) await previous.DisposeAsync();
     }
 
     public void SetActive(bool active) { _active = active; UpdateClock(); }

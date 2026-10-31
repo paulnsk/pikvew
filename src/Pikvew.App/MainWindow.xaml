@@ -12,9 +12,11 @@
     <HierarchicalDataTemplate DataType="{x:Type browser:DirectoryNode}" ItemsSource="{Binding Children}">
       <TextBlock Text="{Binding Name}" ToolTip="{Binding Error}" Margin="2,4" />
     </HierarchicalDataTemplate>
-    <Style TargetType="TreeViewItem">
+    <Style TargetType="TreeViewItem" BasedOn="{StaticResource {x:Type TreeViewItem}}">
       <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
       <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}" />
+      <Setter Property="ItemsPanel"><Setter.Value><ItemsPanelTemplate><controls:DirectoryTreePanel /></ItemsPanelTemplate></Setter.Value></Setter>
+      <EventSetter Event="Selected" Handler="OnTreeItemSelected" />
     </Style>
     <Style x:Key="ToolbarButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
       <Setter Property="Margin" Value="3,0" />
@@ -34,22 +36,36 @@
     </ContextMenu>
   </Window.Resources>
   <Grid>
-    <Grid x:Name="BrowserRoot">
-      <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
-      <DockPanel Margin="8">
-        <Button DockPanel.Dock="Left" Content="Up" Click="OnUp" Style="{StaticResource ToolbarButton}" />
-        <Button DockPanel.Dock="Right" Content="Browse…" Click="OnBrowseFolder" Style="{StaticResource ToolbarButton}" />
-        <TextBox x:Name="Address" Text="{Binding Browser.DirectoryPath, Mode=OneWay}"
-                 KeyDown="OnAddressKeyDown" VerticalContentAlignment="Center" Margin="4,0" />
+    <Grid x:Name="BrowserRoot" PreviewMouseWheel="OnBrowserWheel">
+      <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+      <DockPanel Margin="10,7">
+        <CheckBox DockPanel.Dock="Left" Content="Supported formats only" IsChecked="{Binding Browser.SupportedOnly}"
+                  VerticalAlignment="Center" Margin="0,0,12,0" />
+        <ComboBox DockPanel.Dock="Left" ItemsSource="{Binding Browser.SortOptions}" SelectedItem="{Binding Browser.Sort}"
+                  Width="145" VerticalAlignment="Center" />
+        <Slider x:Name="ThumbnailSlider" DockPanel.Dock="Right" Minimum="64" Maximum="640" Width="160" Margin="12,0,0,0"
+                Value="{Binding Browser.ThumbnailSize}" VerticalAlignment="Center" />
+        <ScrollViewer HorizontalScrollBarVisibility="Hidden" VerticalScrollBarVisibility="Disabled" Margin="12,0">
+          <ItemsControl ItemsSource="{Binding Browser.Breadcrumbs}">
+            <ItemsControl.ItemsPanel><ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate><DataTemplate>
+              <StackPanel Orientation="Horizontal"><Button Content="{Binding Name}" Click="OnBreadcrumbClick" Padding="6,4" BorderThickness="0" Background="Transparent" /><TextBlock Text="›" VerticalAlignment="Center" Opacity="0.5" Margin="3,0" /></StackPanel>
+            </DataTemplate></ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
       </DockPanel>
       <Grid Grid.Row="1">
         <Grid.ColumnDefinitions>
-          <ColumnDefinition x:Name="TreeColumn" Width="240" MinWidth="100" /><ColumnDefinition Width="5" /><ColumnDefinition Width="*" />
+          <ColumnDefinition x:Name="TreeColumn" Width="240" MinWidth="100" /><ColumnDefinition Width="10" /><ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
         <TreeView x:Name="FolderTree" ItemsSource="{Binding Browser.Roots}"
                   SelectedItemChanged="OnDirectorySelected" BorderThickness="0"
-                  VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling" />
-        <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Stretch" />
+                  VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
+          <TreeView.ItemsPanel><ItemsPanelTemplate><controls:DirectoryTreePanel /></ItemsPanelTemplate></TreeView.ItemsPanel>
+        </TreeView>
+        <GridSplitter Grid.Column="1" Width="10" HorizontalAlignment="Stretch" Background="{DynamicResource SurfaceBrush}" Cursor="SizeWE">
+          <GridSplitter.Template><ControlTemplate TargetType="GridSplitter"><Border Background="{TemplateBinding Background}"><Border Width="1" Background="{DynamicResource BorderBrush}" HorizontalAlignment="Center" /></Border></ControlTemplate></GridSplitter.Template>
+        </GridSplitter>
         <ListBox x:Name="Files" Grid.Column="2" ItemsSource="{Binding Browser.Files}"
                  SelectionMode="Extended" BorderThickness="0" Background="Transparent"
                  ScrollViewer.CanContentScroll="True" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
@@ -78,11 +94,11 @@
             <DataTemplate>
               <Grid ToolTip="{Binding Path}">
                 <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="22" /><RowDefinition Height="18" /></Grid.RowDefinitions>
-                <Border Background="#14000000" CornerRadius="4">
+                <Border Background="{DynamicResource EditorBrush}" CornerRadius="4">
                   <Grid>
                     <TextBlock Text="{Binding Kind}" HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.5" />
                     <controls:ThumbnailImage Stretch="Uniform" />
-                    <Button Content="Open with…" Click="OnUnsupportedTileOpenWith" HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <Button Content="Open with…" Click="OnUnsupportedTileOpenWith" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
                       <Button.Style>
                         <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
                           <Setter Property="Visibility" Value="Collapsed" />
@@ -99,17 +115,8 @@
           </ListBox.ItemTemplate>
         </ListBox>
       </Grid>
-      <DockPanel Grid.Row="2" Margin="10,7">
-        <CheckBox DockPanel.Dock="Left" Content="Supported formats only" IsChecked="{Binding Browser.SupportedOnly}"
-                  VerticalAlignment="Center" Margin="0,0,16,0" />
-        <ComboBox DockPanel.Dock="Left" ItemsSource="{Binding Browser.SortOptions}" SelectedItem="{Binding Browser.Sort}"
-                  Width="150" VerticalAlignment="Center" />
-        <Slider DockPanel.Dock="Right" Minimum="64" Maximum="320" Width="150" Margin="16,0,0,0"
-                Value="{Binding Browser.ThumbnailSize}" ToolTip="Thumbnail size" VerticalAlignment="Center" />
-        <TextBlock Text="{Binding Browser.Status}" VerticalAlignment="Center" Margin="12,0" TextTrimming="CharacterEllipsis" />
-      </DockPanel>
     </Grid>
-    <Grid x:Name="ViewerRoot" Background="Black" Visibility="Collapsed" MouseMove="OnViewerMouseMove">
+    <Grid x:Name="ViewerRoot" Background="Black" Visibility="Collapsed" MouseMove="OnViewerMouseMove" ContextMenu="{StaticResource FileMenu}">
       <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
       <controls:ImageViewport x:Name="ImageCanvas" MouseWheel="OnViewerWheel"
                               MouseDown="OnViewerClick" ContextMenu="{StaticResource FileMenu}" />
@@ -125,9 +132,19 @@
               <ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" />
               <ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <Button Content="|◀" Click="OnPreviousFrame" ToolTip="Previous frame (,)" Style="{StaticResource ToolbarButton}" />
-            <Button Grid.Column="1" Content="{Binding Playback.PlayLabel}" Click="OnPlayPause" ToolTip="Play / pause (Space)" Style="{StaticResource ToolbarButton}" />
-            <Button Grid.Column="2" Content="▶|" Click="OnNextFrame" ToolTip="Next frame (.)" Style="{StaticResource ToolbarButton}" />
+            <Button Click="OnPreviousFrame" ToolTip="Previous frame (,)" AutomationProperties.Name="Previous frame" Style="{StaticResource ToolbarButton}">
+              <Path Data="M2,1V19 M17,2L5,10L17,18Z" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.5" Width="16" Height="16" Stretch="Uniform" />
+            </Button>
+            <Button Grid.Column="1" Click="OnPlayPause" ToolTip="Play / pause (Space)" AutomationProperties.Name="{Binding Playback.PlayLabel}" Style="{StaticResource ToolbarButton}">
+              <Path Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Width="16" Height="16" Stretch="Uniform">
+                <Path.Style><Style TargetType="Path"><Setter Property="Data" Value="M4,2L18,10L4,18Z" /><Style.Triggers>
+                  <DataTrigger Binding="{Binding Playback.IsPlaying}" Value="True"><Setter Property="Data" Value="M3,2H8V18H3Z M12,2H17V18H12Z" /></DataTrigger>
+                </Style.Triggers></Style></Path.Style>
+              </Path>
+            </Button>
+            <Button Grid.Column="2" Click="OnNextFrame" ToolTip="Next frame (.)" AutomationProperties.Name="Next frame" Style="{StaticResource ToolbarButton}">
+              <Path Data="M18,1V19 M3,2L15,10L3,18Z" Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.5" Width="16" Height="16" Stretch="Uniform" />
+            </Button>
             <Slider x:Name="SeekSlider" Grid.Column="3" Minimum="0" Maximum="{Binding Playback.Duration}"
                     ValueChanged="OnSeek" PreviewMouseLeftButtonDown="OnSeekStart" PreviewMouseLeftButtonUp="OnSeekEnd"
                     IsMoveToPointEnabled="True" VerticalAlignment="Center" Margin="12,0" />
@@ -140,7 +157,9 @@
           </TextBlock>
           <DockPanel>
             <Button DockPanel.Dock="Left" Content="Browser" Click="OnShowBrowser" Style="{StaticResource ToolbarButton}" ToolTip="Enter / double-click" />
-            <Button DockPanel.Dock="Right" Content="Fullscreen" Click="OnFullscreen" Style="{StaticResource ToolbarButton}" ToolTip="Ctrl+Enter / middle click" />
+            <Button x:Name="FullscreenButton" DockPanel.Dock="Right" Click="OnFullscreen" Style="{StaticResource ToolbarButton}" ToolTip="Fullscreen (Ctrl+Enter / middle click)" AutomationProperties.Name="Fullscreen">
+              <Path x:Name="FullscreenGlyph" Data="M1,7V1H7 M13,1H19V7 M19,13V19H13 M7,19H1V13" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.8" Width="18" Height="18" Stretch="Uniform" />
+            </Button>
             <ComboBox x:Name="Transparency" DockPanel.Dock="Right" Width="125" Margin="10,0"
                       SelectionChanged="OnTransparencyChanged" ToolTip="Transparency background">
               <ComboBoxItem Content="Black" /><ComboBoxItem Content="White" /><ComboBoxItem Content="Checkerboard" />

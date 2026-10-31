@@ -17,6 +17,7 @@ public sealed class UserSettings
     public double BrowserOffset { get; set; }
     public bool SupportedOnly { get; set; } = true;
     public bool Fullscreen { get; set; }
+    public bool EnlargeSmallImages { get; set; }
     public bool Maximized { get; set; }
     public double Left { get; set; } = double.NaN;
     public double Top { get; set; } = double.NaN;
@@ -56,7 +57,7 @@ public static class SettingsCodec
                 : null;
             if (value is not null) property.SetValue(settings, value);
         }
-        settings.ThumbnailSize = Math.Clamp(settings.ThumbnailSize, 64, 320);
+        settings.ThumbnailSize = Math.Clamp(settings.ThumbnailSize, 64, 640);
         settings.Width = Math.Clamp(settings.Width, 480, 32000);
         settings.Height = Math.Clamp(settings.Height, 320, 32000);
         settings.TreeWidth = Math.Clamp(settings.TreeWidth, 100, 1000);

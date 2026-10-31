@@ -4,6 +4,61 @@
 
 ## Текущее состояние
 
+- 2026-11-01, второй проход по пользовательской приёмке: исправить пункты 1–17
+  и Ctrl+wheel/максимум превью 640. Главные: гонка tree reveal/выбор и кража фокуса;
+  скролл selected tree header; тёмные TreeViewItem/ScrollBar/Slider/MenuItem;
+  единая верхняя панель без Up/Browse, необязательный breadcrumb; сохранение Fit
+  между файлами; fullscreen toolbar только у нижней кромки; контекст для unsupported;
+  карточки unsupported; собственный SVG->ICO и пиктограммы плеера/fullscreen.
+- Производительность проверять на реальных файлах K:\ScanImage001.png
+  (14032×10208 RGB8, 342MB) и K:\4685896-bdsmlr-10356-r8vcfiol2b.gif (19MB).
+  Предзагрузка нужна в обе стороны. test.bat починить с постоянным логом и pause.
+  Предыдущих пользовательских test-логов нет: старый bat их не сохранял.
+- Второй проход реализован: устранены ShowBrowser/reveal гонка и перевод фокуса
+  с дерева; реализация/прокрутка selected header через DirectoryTreePanel (проверка
+  500 папок), собственные TreeViewItem/ScrollBar/Slider/MenuItem templates.
+- Сверху filter/sort/thumbnail slider 64–640 + clickable breadcrumbs; Up/Browse/
+  редактирование пути и нижняя полоса убраны. Ctrl+wheel меняет размер превьюх.
+- Fit (*) теперь sticky для следующих файлов и сохраняется в registry;
+  / возвращает исходную политику маленьких картинок 100%. Ручной зум не переносится.
+- Предзагрузка в обе стороны и сохранение покинутого ImageDocument. Версия
+  документа хранится отдельно от обновившихся metadata (иначе кеш подменял новый
+  файл старым после внешней замены; соответствующий тест поймал и проверил фикс).
+- GIF: при пропуске таймером кадра декодируем промежуточные последовательно,
+  а не заново весь префикс; кеш decoded frames до 512 MiB на документ.
+  Реальный пользовательский GIF: load 0.089s, все 119 кадров 1.876s, повторный
+  кешированный проход <1ms; длительность записи 4.957s. Это замер декодера, не FPS UI.
+- PNG: обычные неанимированные PNG через WIC, без Skia/AnimatedImage probes;
+  оригинал сохраняется, для fit >16MP строится отдельный preview до 4096px.
+  На K:\ScanImage001.png end-to-end loader+preview 2.337s (локальный benchmark),
+  WIC decode 2.136s; исходный файл не изменялся. При зуме используется оригинал.
+- Fullscreen toolbar только у нижней кромки / при наведении на саму панель;
+  unsupported viewer имеет общее context menu, Copy image disabled при отсутствии
+  пикселей; unsupported карточки заполнены большой Open With кнопкой без дубля текста.
+- Нарисован собственный Assets/Pikvew.svg, сконвертирован в ICO 16–256px и встроен;
+  play/pause/frame/fullscreen — векторные пиктограммы. imagegen не использовался.
+- test.bat теперь cmd /k launcher + scripts/run-tests.ps1 (явный dotnet.exe),
+  сохраняет UTF-8 test.log и tests.trx в artifacts/test-results, не исчезает после
+  завершения. Sandbox-параметр runner отключает только OS integration tests.
+- Второй проход, текущая проверка: **52 passed, 3 skipped, 0 failed** (55 cases),
+  через новый runner; UTF-8 test.log и tests.trx действительно записываются.
+  Дополнены проверки: 500 директорий, выбор/прокрутка/сохранение фокуса дерева,
+  sticky Fit, unsupported context menu, original+preview большого PNG,
+  возврат к тому же ImageDocument при навигации назад/вперёд.
+- Скриншоты просмотрены в пределах согласованных 5: dark scrollbar/slider,
+  uniform menu без icon gutter, vector playback/fullscreen glyphs. Fullscreen
+  toolbar по умолчанию скрыт; показ только у нижней кромки/на самой панели.
+- Виртуализация дерева сохранена: целевой container реализуется по цепочке
+  DirectoryTreePanel, затем явно выбирается и прокручивается только header.
+  Горизонтальная прокрутка не должна скрывать начало имени выбранной папки.
+- Код второго прохода готов, финальная single-file публикация завершена:
+  artifacts/release/win-x64/Pikvew.exe, 182751077 bytes; выполняется commit/push.
+- Дополнительный smoke запуска опубликованного EXE не прошёл стадию secondary
+  instance forwarding: single-instance mutex уже существует (bench --instance-info
+  подтвердил IsPrimary=False), подключение к pipe запрещено sandbox. Окно ошибки
+  созданного нами secondary экземпляра закрыто. Не считать этот запуск проверкой
+  свежего процесса; пользователю закрыть предыдущую копию перед проверкой новой.
+
 - Репозиторий при первом осмотре содержит только .git.
 - Этап 1 выполнен: Pikvew.slnx, WPF shell, DI/IHost, Core и xUnit-проект,
   manifest PerMonitorV2/long paths/asInvoker, publish.bat и конфигурация репозитория.

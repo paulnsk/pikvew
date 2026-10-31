@@ -14,15 +14,29 @@ public sealed class BrowserViewModel(ImageLoader loader, ThumbnailCache thumbnai
     private string _status = "";
     private bool _busy;
     private Task? _rootsTask;
+    public bool IsSynchronizingTreeSelection { get; private set; }
     public ObservableCollection<DirectoryNode> Roots { get; } = [];
     public IReadOnlyList<FileItem> Files { get => _files; private set => Set(ref _files, value); }
-    public string DirectoryPath { get => _directory; private set => Set(ref _directory, value); }
+    public string DirectoryPath { get => _directory; private set { if (Set(ref _directory, value)) Raise(nameof(Breadcrumbs)); } }
+    public IReadOnlyList<BreadcrumbPart> Breadcrumbs
+    {
+        get
+        {
+            if (string.IsNullOrEmpty(DirectoryPath)) return [];
+            var root = Path.GetPathRoot(DirectoryPath) ?? "";
+            var result = new List<BreadcrumbPart> { new(root, root) };
+            var current = root;
+            foreach (var part in DirectoryPath[root.Length..].Split(['\\', '/'], StringSplitOptions.RemoveEmptyEntries))
+            { current = Path.Combine(current, part); result.Add(new BreadcrumbPart(part, current)); }
+            return result;
+        }
+    }
     public string Status { get => _status; private set => Set(ref _status, value); }
     public bool IsBusy { get => _busy; private set => Set(ref _busy, value); }
     public double ThumbnailSize
     {
         get => settings.ThumbnailSize;
-        set { settings.ThumbnailSize = Math.Clamp(value, 64, 320); Raise(); }
+        set { settings.ThumbnailSize = Math.Clamp(value, 64, 640); Raise(); }
     }
     public bool SupportedOnly
     {
@@ -63,7 +77,20 @@ public sealed class BrowserViewModel(ImageLoader loader, ThumbnailCache thumbnai
             node = node.Children.FirstOrDefault(child => string.Equals(child.Name, part, StringComparison.OrdinalIgnoreCase));
             if (node is null) return;
         }
-        if (string.Equals(target, DirectoryPath, StringComparison.OrdinalIgnoreCase)) node.IsSelected = true;
+        if (!string.Equals(target, DirectoryPath, StringComparison.OrdinalIgnoreCase)) return;
+        IsSynchronizingTreeSelection = true;
+        try
+        {
+            foreach (var root in Roots) ClearSelection(root);
+            node.IsSelected = true;
+        }
+        finally { IsSynchronizingTreeSelection = false; }
+    }
+
+    private static void ClearSelection(DirectoryNode node)
+    {
+        node.IsSelected = false;
+        foreach (var child in node.Children) ClearSelection(child);
     }
 
     public void EnsureNetworkRoot(string directory)
@@ -124,3 +151,5 @@ public sealed class BrowserViewModel(ImageLoader loader, ThumbnailCache thumbnai
 
     public void Cancel() => _scan?.Cancel();
 }
+
+public sealed record BreadcrumbPart(string Name, string Path);

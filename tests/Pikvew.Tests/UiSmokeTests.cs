@@ -78,8 +78,31 @@ public sealed class UiSmokeTests
             Directory.CreateDirectory(screenshotRoot);
             Capture((FrameworkElement)window.Content, Path.Combine(screenshotRoot, "browser.png"));
 
+            // A real selection event must navigate once and retain keyboard focus in the tree.
+            for (var folder = 0; folder < 500; folder++) Directory.CreateDirectory(Path.Combine(directory, $"folder{folder:D3}"));
+            var subdirectory = Path.Combine(directory, "folder499");
+            await window.OpenArgumentsAsync([subdirectory]);
+            await Task.Delay(150);
+            var tree = (TreeView)window.FindName("FolderTree");
+            Assert.Equal(subdirectory, ((DirectoryNode)tree.SelectedItem).Path);
+            Assert.True(FindVisual<ScrollViewer>(tree)!.VerticalOffset > 0);
+            var siblingPath = Path.Combine(directory, "folder498");
+            var sibling = FindTreeItem(tree, siblingPath);
+            Assert.NotNull(sibling);
+            sibling.IsSelected = true;
+            sibling.Focus();
+            await Task.Delay(150);
+            Assert.Equal(siblingPath, browser.DirectoryPath);
+            Assert.Equal(siblingPath, ((DirectoryNode)tree.SelectedItem).Path);
+            Assert.True(tree.IsKeyboardFocusWithin);
+            Assert.Empty(browser.Files);
+            await window.OpenArgumentsAsync([directory]);
+            Assert.Equal(80, browser.Files.Count);
+
             await model.ShowImageAsync(path);
             Assert.Equal(EscapeAction.ShowBrowser, model.Escape);
+            window.UpdateLayout();
+            Capture((FrameworkElement)window.Content, Path.Combine(screenshotRoot, "viewer-windowed.png"));
             settings.Fullscreen = true;
             await window.OpenArgumentsAsync([path]);
             Assert.True(model.IsViewing);
@@ -88,10 +111,25 @@ public sealed class UiSmokeTests
             Assert.Equal(EscapeAction.CloseApplication, model.Escape);
             await model.NavigateAsync(1);
             Assert.Equal("2.gif", model.FileName);
+            Assert.True(canvas.Scale > 1); // * preference applies to subsequent small images.
             await model.NavigateAsync(0, last: true);
             Assert.Equal("80.gif", model.FileName);
             await model.NavigateAsync(1);
             Assert.Equal("80.gif", model.FileName);
+            var unsupported = Path.Combine(directory, "notes.txt");
+            await File.WriteAllTextAsync(unsupported, "not an image");
+            await window.OpenArgumentsAsync([unsupported]);
+            Assert.Null(model.Playback.Document);
+            var viewer = (FrameworkElement)window.FindName("ViewerRoot");
+            var menu = viewer.ContextMenu;
+            Assert.NotNull(menu);
+            menu.PlacementTarget = viewer;
+            menu.IsOpen = true;
+            await Task.Delay(50);
+            Assert.False(((MenuItem)menu.Items[0]).IsEnabled);
+            Assert.True(((MenuItem)menu.Items[2]).IsEnabled);
+            Capture(menu, Path.Combine(screenshotRoot, "menu.png"));
+            menu.IsOpen = false;
         }
         finally
         {
@@ -101,6 +139,28 @@ public sealed class UiSmokeTests
             application.Shutdown();
         }
     });
+
+    private static T? FindVisual<T>(DependencyObject root) where T : DependencyObject
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is T match) return match;
+            if (FindVisual<T>(child) is { } found) return found;
+        }
+        return null;
+    }
+
+    private static TreeViewItem? FindTreeItem(DependencyObject root, string path)
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is TreeViewItem { DataContext: DirectoryNode node } item && node.Path == path) return item;
+            if (FindTreeItem(child, path) is { } found) return found;
+        }
+        return null;
+    }
 
     private static void Capture(FrameworkElement element, string path)
     {

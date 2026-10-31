@@ -29,7 +29,7 @@ public sealed class SettingsTests
         { ["Width"] = "NaN", ["Height"] = "-1000", ["ThumbnailSize"] = "999999", ["FutureSetting"] = "ignored" });
         Assert.Equal(1100, restored.Width);
         Assert.Equal(320, restored.Height);
-        Assert.Equal(320, restored.ThumbnailSize);
+        Assert.Equal(640, restored.ThumbnailSize);
     }
 
     [RegistryFact]
@@ -73,7 +73,7 @@ public sealed class SettingsTests
             var restored = new RegistrySettingsStore(path).Load();
             Assert.Equal(1100, restored.Width);
             Assert.Equal(320, restored.Height);
-            Assert.Equal(320, restored.ThumbnailSize);
+            Assert.Equal(640, restored.ThumbnailSize);
         }
         finally { Registry.CurrentUser.DeleteSubKeyTree(path, false); }
     }

@@ -10,10 +10,13 @@ public sealed class ImageViewport : FrameworkElement
 {
     private readonly Viewport _viewport = new();
     private BitmapSource? _source;
+    private BitmapSource? _preview;
     private Point? _drag;
     private int _fitMode = 1; // 0: manual, 1: initial fit without enlargement, 2: explicit fit.
     private static readonly Brush Checker = CreateChecker();
     public event Action<double>? ScaleChanged;
+    public event Action<bool>? FitPreferenceChanged;
+    public bool EnlargeSmallImages { get; set; }
     public double Scale => _viewport.Scale;
     public string Transparency { get; set; } = "Black";
     public BitmapSource? Source => _source;
@@ -46,20 +49,22 @@ public sealed class ImageViewport : FrameworkElement
         };
     }
 
-    public void SetImage(BitmapSource? source, bool reset)
+    public void SetImage(BitmapSource? source, bool reset, BitmapSource? preview = null)
     {
         _source = source;
+        if (reset || source is null) _preview = preview;
         Resize();
         if (source is not null && reset)
         {
-            _fitMode = 1;
+            _fitMode = EnlargeSmallImages ? 2 : 1;
             _viewport.SetImage(source.PixelWidth, source.PixelHeight);
+            if (EnlargeSmallImages) _viewport.Fit(true);
         }
         Changed();
     }
 
-    public void Fit() { _fitMode = 2; _viewport.Fit(true); Changed(); }
-    public void ActualSize() => ZoomTo(1, new Point(ActualWidth / 2, ActualHeight / 2));
+    public void Fit() { EnlargeSmallImages = true; FitPreferenceChanged?.Invoke(true); _fitMode = 2; _viewport.Fit(true); Changed(); }
+    public void ActualSize() { EnlargeSmallImages = false; FitPreferenceChanged?.Invoke(false); ZoomTo(1, new Point(ActualWidth / 2, ActualHeight / 2)); }
     public void Zoom(double factor, Point? anchor = null) => ZoomTo(_viewport.Scale * factor, anchor ?? new Point(ActualWidth / 2, ActualHeight / 2));
     public void Pan(double dx, double dy) { _fitMode = 0; _viewport.Pan(dx, dy); InvalidateVisual(); }
     private void ZoomTo(double scale, Point anchor)
@@ -93,7 +98,8 @@ public sealed class ImageViewport : FrameworkElement
             _source.PixelWidth * _viewport.Scale / dpi.DpiScaleX, _source.PixelHeight * _viewport.Scale / dpi.DpiScaleY);
         var background = Transparency switch { "White" => Brushes.White, "Checkerboard" => Checker, _ => Brushes.Black };
         drawingContext.DrawRectangle(background, null, rect);
-        drawingContext.DrawImage(_source, rect);
+        var displayed = _preview is not null && rect.Width * dpi.DpiScaleX <= _preview.PixelWidth && rect.Height * dpi.DpiScaleY <= _preview.PixelHeight ? _preview : _source;
+        drawingContext.DrawImage(displayed, rect);
     }
 
     private static Brush CreateChecker()

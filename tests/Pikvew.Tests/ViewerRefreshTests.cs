@@ -12,6 +12,36 @@ namespace Pikvew.Tests;
 public sealed class ViewerRefreshTests
 {
     [Fact]
+    public async Task NavigatingBackReusesTheDocumentJustLeft()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "PikvewNeighbours-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var loader = new ImageLoader();
+        var settings = new UserSettings();
+        var browser = new BrowserViewModel(loader, new ThumbnailCache(loader), settings, new FileCatalog());
+        await using var model = new MainViewModel(loader, settings, browser, new PlaybackController(), new ImagePreloader(loader));
+        try
+        {
+            for (var i = 1; i <= 3; i++)
+            {
+                using var image = new MagickImage(MagickColors.Red, 32, 24);
+                image.Write(Path.Combine(directory, $"{i}.png"));
+            }
+            await model.OpenExternalAsync(Path.Combine(directory, "2.png"));
+            var original = model.Playback.Document;
+            await model.NavigateAsync(1);
+            Assert.Equal("3.png", model.FileName);
+            await model.NavigateAsync(-1);
+            Assert.Same(original, model.Playback.Document);
+            await model.NavigateAsync(-1);
+            Assert.Equal("1.png", model.FileName);
+            await model.NavigateAsync(1);
+            Assert.Same(original, model.Playback.Document);
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+
+    [Fact]
     public async Task DeletingCurrentImageKeepsItsPositionAndHandlesAnEmptyFolder()
     {
         var directory = Path.Combine(Path.GetTempPath(), "PikvewRefresh-" + Guid.NewGuid().ToString("N"));

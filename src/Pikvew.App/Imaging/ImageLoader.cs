@@ -3,6 +3,7 @@ using System.Windows.Media.Imaging;
 using AnimatedImage;
 using ImageMagick;
 using SkiaSharp;
+using System.Buffers.Binary;
 
 namespace Pikvew.App.Imaging;
 
@@ -46,7 +47,9 @@ public sealed class ImageLoader
         // The library owns GIF/APNG/WebP decoding, disposal and frame composition.
         // Our player only supplies time/seek commands and a thread-independent pixel canvas.
         var extension = Path.GetExtension(path).ToLowerInvariant();
-        if (extension is ".gif" or ".webp" or ".png" or ".apng" or ".avif")
+        var animatedPng = extension is ".png" or ".apng" && HasPngAnimation(bytes);
+        if (extension == ".png" && !animatedPng) return DecodePng(bytes);
+        if (extension is ".gif" or ".webp" or ".avif" || animatedPng)
         {
             using var data = SKData.CreateCopy(bytes);
             var codec = SKCodec.Create(data);
@@ -66,7 +69,7 @@ public sealed class ImageLoader
             }
             codec?.Dispose();
         }
-        if (extension is ".png" or ".apng")
+        if (animatedPng)
         {
             using var stream = new MemoryStream(bytes, false);
             if (FrameRenderer.TryCreate(stream, new PixelBufferFactory(), out var renderer))
@@ -100,6 +103,38 @@ public sealed class ImageLoader
         image.AutoOrient();
         NormalizeColor(image);
         return new ImageDocument(ToBitmap(image), notice: notice);
+    }
+
+    private static bool HasPngAnimation(byte[] bytes)
+    {
+        for (long offset = 8; offset + 12 <= bytes.Length;)
+        {
+            var position = (int)offset;
+            if (bytes.AsSpan(position + 4, 4).SequenceEqual("acTL"u8)) return true;
+            if (bytes.AsSpan(position + 4, 4).SequenceEqual("IDAT"u8)) return false;
+            offset += BinaryPrimitives.ReadUInt32BigEndian(bytes.AsSpan(position, 4)) + 12L;
+        }
+        return false;
+    }
+
+    private static ImageDocument DecodePng(byte[] bytes)
+    {
+        using var stream = new MemoryStream(bytes, false);
+        var decoder = BitmapDecoder.Create(stream, BitmapCreateOptions.PreservePixelFormat, BitmapCacheOption.OnLoad);
+        var frame = decoder.Frames[0];
+        BitmapSource source = frame;
+        if (frame.ColorContexts is { Count: > 0 })
+            source = new ColorConvertedBitmap(frame, frame.ColorContexts[0], new ColorContext(PixelFormats.Bgra32), PixelFormats.Bgra32);
+        var bitmap = new CachedBitmap(source, BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
+        bitmap.Freeze();
+        BitmapSource? preview = null;
+        if ((long)bitmap.PixelWidth * bitmap.PixelHeight > 16_000_000)
+        {
+            var scale = 4096d / Math.Max(bitmap.PixelWidth, bitmap.PixelHeight);
+            preview = new CachedBitmap(new TransformedBitmap(bitmap, new ScaleTransform(scale, scale)), BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
+            preview.Freeze();
+        }
+        return new ImageDocument(bitmap, preview: preview);
     }
 
     private static MagickReadSettings ReadSettings(string path)
@@ -150,7 +185,7 @@ public sealed class ImageLoader
                 using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
                 using var image = new MagickImage(file, ReadSettings(path));
                 image.AutoOrient();
-                image.Thumbnail(new MagickGeometry(320, 320) { Greater = true });
+                image.Thumbnail(new MagickGeometry(640, 640) { Greater = true });
                 NormalizeColor(image);
                 token.ThrowIfCancellationRequested();
                 return ToBitmap(image);

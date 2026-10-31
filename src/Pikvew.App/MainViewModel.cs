@@ -16,6 +16,7 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     private string _currentPath = "";
     private string _message = "";
     private bool _loading;
+    private long? _documentStamp;
     public BrowserViewModel Browser { get; }
     public PlaybackController Playback { get; }
     public event Action? ImageOpened;
@@ -45,19 +46,23 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     { if (e.PropertyName == nameof(Playback.Document)) { Raise(nameof(Dimensions)); Raise(nameof(Notice)); } }
     private void OnPlaybackFailed(string message) => Message = message;
     private void OnBrowserChanged(object? sender, PropertyChangedEventArgs e)
-    { if (e.PropertyName == nameof(BrowserViewModel.Files)) PreloadNext(); }
+    {
+        if (e.PropertyName != nameof(BrowserViewModel.Files)) return;
+        if (_documentStamp is null && Playback.Document is not null && Browser.Files.FirstOrDefault(f => f.Path == CurrentPath) is { } entry)
+            _documentStamp = entry.Modified.Ticks ^ entry.Length;
+        PreloadNeighbours();
+    }
 
-    private void PreloadNext()
+    private void PreloadNeighbours()
     {
         if (!IsViewing) return;
         var files = Browser.Files.Where(f => f.Supported).ToArray();
         var index = Array.FindIndex(files, f => string.Equals(f.Path, CurrentPath, StringComparison.OrdinalIgnoreCase));
-        if (index < 0 || index + 1 >= files.Length) return;
-        var next = files[index + 1];
-        if (next.Length > 32 * 1024 * 1024) return;
-        // Avoid speculative animation work while another animation is playing.
-        if (Path.GetExtension(next.Path).ToLowerInvariant() is ".gif" or ".webp" or ".apng") return;
-        _preloader.Schedule(next.Path, next.Modified.Ticks ^ next.Length);
+        if (index < 0) return;
+        var neighbours = new[] { index - 1, index + 1 }.Where(i => i >= 0 && i < files.Length).Select(i => files[i]).ToArray();
+        _preloader.KeepOnly(neighbours.Select(f => f.Path).ToArray());
+        foreach (var next in neighbours.Where(f => f.Length <= 128 * 1024 * 1024))
+            _preloader.Schedule(next.Path, next.Modified.Ticks ^ next.Length);
     }
 
     public async Task OpenExternalAsync(string path)
@@ -104,11 +109,15 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
         _load?.Dispose();
         var request = _load = new CancellationTokenSource();
         var token = request.Token;
+        var previousEntry = Browser.Files.FirstOrDefault(f => string.Equals(f.Path, CurrentPath, StringComparison.OrdinalIgnoreCase));
+        var retainPrevious = previousEntry is not null && Playback.Document is not null && _documentStamp.HasValue;
+        if (retainPrevious) _preloader.Retain(CurrentPath, _documentStamp!.Value, Playback.Document!);
+        _documentStamp = null;
         CurrentPath = path;
         _settings.LastFile = path;
         Message = "Loading image…";
         IsLoading = true;
-        await Playback.SetDocumentAsync(null);
+        await Playback.SetDocumentAsync(null, disposePrevious: !retainPrevious);
         ImageOpened?.Invoke();
         try
         {
@@ -116,11 +125,13 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
             var cached = entry is null ? null : await _preloader.TakeAsync(path, entry.Modified.Ticks ^ entry.Length, token);
             var document = cached ?? await _loader.LoadAsync(path, token);
             if (token.IsCancellationRequested) { await document.DisposeAsync(); return; }
+            entry ??= Browser.Files.FirstOrDefault(f => string.Equals(f.Path, path, StringComparison.OrdinalIgnoreCase));
+            _documentStamp = entry is null ? null : entry.Modified.Ticks ^ entry.Length;
             await Playback.SetDocumentAsync(document);
             if (token.IsCancellationRequested) return;
             Message = "";
             ImageOpened?.Invoke();
-            PreloadNext();
+            PreloadNeighbours();
         }
         catch (OperationCanceledException) { }
         catch (Exception exception)

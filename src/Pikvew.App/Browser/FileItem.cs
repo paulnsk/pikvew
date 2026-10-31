@@ -10,6 +10,6 @@ public sealed class FileItem(string path, DateTime modified, long length, bool s
     public DateTime Modified { get; } = modified;
     public long Length { get; } = length;
     public bool Supported { get; } = supported;
-    public string Kind => Supported ? System.IO.Path.GetExtension(Path).TrimStart('.').ToUpperInvariant() : "Open with…";
+    public string Kind => Supported ? System.IO.Path.GetExtension(Path).TrimStart('.').ToUpperInvariant() : "";
     public Task<BitmapSource> ThumbnailAsync(CancellationToken token) => thumbnails.GetAsync(Path, Modified.Ticks ^ Length, token);
 }

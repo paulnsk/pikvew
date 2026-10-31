@@ -8,10 +8,10 @@ using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
-using Microsoft.Win32;
 using Pikvew.App.Browser;
 using Pikvew.App.Infrastructure;
 using Pikvew.Core;
+using Pikvew.App.Controls;
 
 namespace Pikvew.App;
 
@@ -48,6 +48,8 @@ public partial class MainWindow
         TreeColumn.Width = new GridLength(settings.TreeWidth);
         _browserOffset = settings.BrowserOffset;
         ImageCanvas.Transparency = settings.Transparency;
+        ImageCanvas.EnlargeSmallImages = settings.EnlargeSmallImages;
+        ImageCanvas.FitPreferenceChanged += value => settings.EnlargeSmallImages = value;
         Transparency.SelectedIndex = settings.Transparency switch { "White" => 1, "Checkerboard" => 2, _ => 0 };
         _overlayTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
         _overlayTimer.Tick += (_, _) =>
@@ -90,8 +92,9 @@ public partial class MainWindow
         {
             if (arguments.Length == 0)
             {
-                ShowBrowser();
+                ShowBrowser(reveal: false);
                 await _model.Browser.OpenDirectoryAsync(_settings.LastDirectory);
+                await RevealTreeAsync();
                 RestoreBrowserSelection();
             }
             else
@@ -102,8 +105,9 @@ public partial class MainWindow
                 if (version != _openRequestVersion || _closing) return;
                 if (directory)
                 {
-                    ShowBrowser();
+                    ShowBrowser(reveal: false);
                     await _model.Browser.OpenDirectoryAsync(path);
+                    await RevealTreeAsync();
                 }
                 else
                 {
@@ -128,8 +132,6 @@ public partial class MainWindow
 
     private void OnBrowserChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(BrowserViewModel.DirectoryPath) && !_model.IsViewing)
-            _ = RunAsync(_model.Browser.RevealCurrentDirectoryAsync);
         if (e.PropertyName == nameof(BrowserViewModel.Files))
             Dispatcher.InvokeAsync(RestoreBrowserSelection, DispatcherPriority.Loaded);
     }
@@ -145,7 +147,7 @@ public partial class MainWindow
 
     private void OnImageOpened()
     {
-        ImageCanvas.SetImage(_model.Playback.Document?.FirstFrame, true);
+        ImageCanvas.SetImage(_model.Playback.Document?.FirstFrame, true, _model.Playback.Document?.PreviewFrame);
         if (_model.IsViewing) ImageCanvas.Focus();
     }
 
@@ -177,7 +179,7 @@ public partial class MainWindow
         if (!_model.IsViewing) FindVisual<ScrollViewer>(Files)?.ScrollToVerticalOffset(_browserOffset);
     }
 
-    private void ShowBrowser()
+    private void ShowBrowser(bool reveal = true)
     {
         var movedFromSelection = _model.IsViewing && !string.IsNullOrEmpty(_model.CurrentPath)
             && !_browserSelection.Contains(_model.CurrentPath, StringComparer.OrdinalIgnoreCase);
@@ -188,7 +190,7 @@ public partial class MainWindow
         RestoreBrowserSelection();
         if (movedFromSelection && Files.SelectedItem is { } selected) Files.ScrollIntoView(selected);
         Files.Focus();
-        _ = RunAsync(_model.Browser.RevealCurrentDirectoryAsync);
+        if (reveal) _ = RunAsync(RevealTreeAsync);
     }
 
     private async Task ToggleViewAsync()
@@ -218,8 +220,11 @@ public partial class MainWindow
         Grid.SetRow(ViewerToolbar, _placement.IsFullscreen ? 0 : 1);
         ViewerToolbar.VerticalAlignment = VerticalAlignment.Bottom;
         Transparency.Visibility = _placement.IsFullscreen ? Visibility.Collapsed : Visibility.Visible;
-        ViewerToolbar.Visibility = Visibility.Visible;
-        if (_placement.IsFullscreen) _overlayTimer.Start();
+        FullscreenGlyph.Data = Geometry.Parse(_placement.IsFullscreen
+            ? "M7,1V7H1 M13,1V7H19 M19,13H13V19 M7,19V13H1"
+            : "M1,7V1H7 M13,1H19V7 M19,13V19H13 M7,19H1V13");
+        ViewerToolbar.Visibility = _placement.IsFullscreen ? Visibility.Collapsed : Visibility.Visible;
+        if (_placement.IsFullscreen) _overlayTimer.Stop();
         else _overlayTimer.Stop();
     }
 
@@ -241,6 +246,7 @@ public partial class MainWindow
             return;
         }
         if (Keyboard.FocusedElement is TextBoxBase || Keyboard.FocusedElement is ComboBox) return;
+        if (!_model.IsViewing && FolderTree.IsKeyboardFocusWithin) return;
         if (e.Key == Key.Enter)
         {
             e.Handled = true;
@@ -295,6 +301,7 @@ public partial class MainWindow
     private void OnViewerMouseMove(object sender, MouseEventArgs e)
     {
         if (!_placement.IsFullscreen) return;
+        if (!ViewerToolbar.IsMouseOver && e.GetPosition(ViewerRoot).Y < ViewerRoot.ActualHeight - 4) return;
         ViewerToolbar.Visibility = Visibility.Visible;
         _overlayTimer.Stop();
         _overlayTimer.Start();
@@ -317,27 +324,79 @@ public partial class MainWindow
     }
     private async void OnDirectorySelected(object sender, RoutedPropertyChangedEventArgs<object> e)
     {
+        if (_model.Browser.IsSynchronizingTreeSelection) return;
         if (e.NewValue is DirectoryNode { Path.Length: > 0 } node && !string.Equals(node.Path, _model.Browser.DirectoryPath, StringComparison.OrdinalIgnoreCase))
-            await OpenFolderAsync(node.Path);
+            await RunAsync(() => OpenFolderAsync(node.Path));
+    }
+    private void OnTreeItemSelected(object sender, RoutedEventArgs e)
+    {
+        if (!ReferenceEquals(sender, e.OriginalSource) || sender is not TreeViewItem item) return;
+        Dispatcher.InvokeAsync(() =>
+        {
+            if (item.IsSelected) BringTreeHeaderIntoView(item);
+        }, DispatcherPriority.Loaded);
+    }
+    private async Task RevealTreeAsync()
+    {
+        await _model.Browser.RevealCurrentDirectoryAsync();
+        var target = _model.Browser.DirectoryPath.TrimEnd('\\');
+        if (string.IsNullOrEmpty(target) || _closing) return;
+        await Dispatcher.InvokeAsync(() =>
+        {
+            ItemsControl parent = FolderTree;
+            IEnumerable<DirectoryNode> candidates = _model.Browser.Roots;
+            while (true)
+            {
+                var node = candidates.FirstOrDefault(n => !string.IsNullOrEmpty(n.Path)
+                    && (target.Equals(n.Path.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)
+                    || target.StartsWith(n.Path.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase)));
+                if (node is null) return;
+                parent.ApplyTemplate();
+                parent.UpdateLayout();
+                var item = parent.ItemContainerGenerator.ContainerFromItem(node) as TreeViewItem;
+                if (item is null)
+                {
+                    FindVisual<DirectoryTreePanel>(parent)?.Realize(parent.Items.IndexOf(node));
+                    parent.UpdateLayout();
+                    item = parent.ItemContainerGenerator.ContainerFromItem(node) as TreeViewItem;
+                }
+                if (item is null) return;
+                if (target.Equals(node.Path.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
+                {
+                    item.SetCurrentValue(TreeViewItem.IsSelectedProperty, true);
+                    BringTreeHeaderIntoView(item);
+                    return;
+                }
+                item.IsExpanded = true;
+                parent = item;
+                candidates = node.Children;
+            }
+        }, DispatcherPriority.Loaded);
+    }
+    private void BringTreeHeaderIntoView(TreeViewItem item)
+    {
+        item.BringIntoView(new Rect(0, 0, 1, 26));
+        if (FindVisual<ScrollViewer>(FolderTree) is not { } scroll) return;
+        var left = item.TranslatePoint(new Point(), FolderTree).X + scroll.HorizontalOffset;
+        scroll.ScrollToHorizontalOffset(Math.Max(0, left - Math.Max(40, scroll.ViewportWidth - 80)));
+    }
+    private void OnBrowserWheel(object sender, MouseWheelEventArgs e)
+    {
+        if ((Keyboard.Modifiers & ModifierKeys.Control) == 0) return;
+        _model.Browser.ThumbnailSize += e.Delta > 0 ? 32 : -32;
+        e.Handled = true;
+    }
+    private async void OnBreadcrumbClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { DataContext: BreadcrumbPart part })
+            await RunAsync(async () => { await OpenFolderAsync(part.Path); await RevealTreeAsync(); });
     }
     private async Task OpenFolderAsync(string path)
     {
         _browserSelection = [];
         _browserOffset = 0;
-        ShowBrowser();
+        if (_model.IsViewing) ShowBrowser(reveal: false);
         await _model.Browser.OpenDirectoryAsync(path);
-    }
-    private async void OnAddressKeyDown(object sender, KeyEventArgs e)
-    { if (e.Key == Key.Enter) { e.Handled = true; await RunAsync(() => OpenFolderAsync(Path.GetFullPath(Address.Text))); } }
-    private async void OnUp(object sender, RoutedEventArgs e)
-    {
-        var parent = Path.GetDirectoryName(_model.Browser.DirectoryPath.TrimEnd('\\', '/'));
-        if (!string.IsNullOrEmpty(parent)) await RunAsync(() => OpenFolderAsync(parent));
-    }
-    private async void OnBrowseFolder(object sender, RoutedEventArgs e)
-    {
-        var dialog = new OpenFolderDialog { InitialDirectory = _model.Browser.DirectoryPath };
-        if (dialog.ShowDialog(this) == true) await RunAsync(() => OpenFolderAsync(dialog.FolderName));
     }
     private void OnDragOver(object sender, DragEventArgs e)
     { e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None; e.Handled = true; }

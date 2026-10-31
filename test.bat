@@ -1,19 +1,21 @@
 @echo off
 setlocal
 title Pikvew Tests
+if /I "%~1"=="--worker" goto worker
+rem /k keeps the console open even if a command unexpectedly terminates this batch.
+%ComSpec% /d /k call "%~f0" --worker
+exit /b
+:worker
 pushd "%~dp0"
-if errorlevel 1 exit /b 1
-rem These OS integration tests need a normal Windows user token, outside the agent sandbox.
-set PIKVEW_REGISTRY_TESTS=1
-set PIKVEW_PIPE_TESTS=1
-dotnet test Pikvew.slnx -m:1 --logger "console;verbosity=normal"
-if errorlevel 1 goto :failed
-color 2F
+if errorlevel 1 goto location_failed
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\run-tests.ps1"
+set "test_result=%ERRORLEVEL%"
+if "%test_result%"=="0" (color 2F) else (color 4F)
+echo.
+echo Logs: %CD%\artifacts\test-results
 popd
-pause
-exit /b 0
-:failed
+exit /b %test_result%
+:location_failed
 color 4F
-popd
-pause
+echo Cannot access the Pikvew repository directory.
 exit /b 1

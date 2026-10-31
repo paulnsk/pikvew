@@ -11,15 +11,17 @@ public sealed class ImageDocument : IAsyncDisposable
     private readonly SemaphoreSlim _gate = new(1, 1);
     private bool _disposed;
     public BitmapSource FirstFrame { get; }
+    public BitmapSource? PreviewFrame { get; }
     public int Width => FirstFrame.PixelWidth;
     public int Height => FirstFrame.PixelHeight;
     public AnimationTimeline Timeline { get; }
     public bool IsAnimated => _renderer is not null && Timeline.Count > 1;
     public string? Notice { get; }
 
-    internal ImageDocument(BitmapSource firstFrame, IAnimationDecoder? renderer = null, string? notice = null)
+    internal ImageDocument(BitmapSource firstFrame, IAnimationDecoder? renderer = null, string? notice = null, BitmapSource? preview = null)
     {
         FirstFrame = firstFrame;
+        PreviewFrame = preview;
         _renderer = renderer;
         Notice = notice;
         Timeline = renderer?.Timeline ?? new AnimationTimeline([TimeSpan.FromMilliseconds(100)]);

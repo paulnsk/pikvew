@@ -7,7 +7,7 @@ rem pushd also supports launching this script from a UNC share.
 pushd "%~dp0"
 if errorlevel 1 goto :location_failed
 
-dotnet publish "src\Pikvew.App\Pikvew.App.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:IncludeAllContentForSelfExtract=true -p:PublishTrimmed=false -p:DebugType=None -p:DebugSymbols=false -o "artifacts\release\win-x64"
+dotnet.exe publish "src\Pikvew.App\Pikvew.App.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:IncludeAllContentForSelfExtract=true -p:PublishTrimmed=false -p:DebugType=None -p:DebugSymbols=false -o "artifacts\release\win-x64"
 if errorlevel 1 goto :failed
 
 if not exist "artifacts\release\win-x64\Pikvew.exe" goto :missing_exe

@@ -61,6 +61,19 @@ public sealed class ImagingTests : IDisposable
     }
 
     [Fact]
+    public async Task LargePngRetainsOriginalPixelsAndHasAFastFitPreview()
+    {
+        var path = Path.Combine(_directory, "large.png");
+        using (var image = new MagickImage(MagickColors.Red, 4800, 3600)) image.Write(path);
+        await using var document = await _loader.LoadAsync(path, CancellationToken.None);
+        Assert.Equal(4800, document.Width);
+        Assert.Equal(3600, document.Height);
+        Assert.NotNull(document.PreviewFrame);
+        Assert.Equal(4096, document.PreviewFrame.PixelWidth);
+        AssertRed(document.FirstFrame);
+    }
+
+    [Fact]
     public async Task TiffDisplaysFirstPageAndExplainsTheLimitation()
     {
         var path = Path.Combine(_directory, "pages.tif");
@@ -115,6 +128,8 @@ public sealed class ImagingTests : IDisposable
 
     private static byte[] Pixels(BitmapSource image)
     {
+        if (image.Format != System.Windows.Media.PixelFormats.Bgra32 && image.Format != System.Windows.Media.PixelFormats.Pbgra32)
+            image = new FormatConvertedBitmap(image, System.Windows.Media.PixelFormats.Bgra32, null, 0);
         var result = new byte[image.PixelWidth * image.PixelHeight * 4];
         image.CopyPixels(result, image.PixelWidth * 4, 0);
         return result;

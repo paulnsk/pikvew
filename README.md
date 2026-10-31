@@ -12,9 +12,13 @@ The browser provides a lazy folder tree, a virtualized thumbnail grid, multiple
 selection, thumbnail sizing, natural/name/date sorting and a supported-format filter.
 The viewer provides zoom/pan, animation seeking, frame stepping and fullscreen.
 UI colors follow the Windows application theme; image margins stay black.
+Ctrl+wheel in the browser changes thumbnail size (64–640). The top toolbar includes
+clickable directory breadcrumbs. Selecting a directory keeps keyboard focus in the tree.
 
 Common raster formats are decoded with Magick.NET. GIF/WebP animation uses Skia's
-native frame compositor with a single decoded canvas; APNG has a managed fallback.
+native frame compositor and a bounded 512 MiB decoded-frame cache; APNG has a managed fallback.
+Ordinary PNG uses Windows Imaging Component. Large PNG keeps its original pixels
+and a separate reduced image for fast fit rendering. Adjacent images are cached in both directions.
 SVG uses the bundled RSVG renderer. Multi-page TIFF shows its first page with a notice.
 An extension being recognized does not guarantee every variant of that format is decodable.
 
@@ -30,7 +34,7 @@ An extension being recognized does not guarantee every variant of that format is
 | Ctrl+wheel | Zoom around the cursor |
 | + / - | Zoom around the viewport center |
 | / | 100%: one image pixel per physical screen pixel |
-| * | Fit, including enlargement of small images |
+| * | Fit, including small images; remember this preference for subsequent images |
 | Drag / arrow keys | Pan an enlarged image |
 | Space | Play / pause animation |
 | , / . | Previous / next frame, paused |
@@ -38,7 +42,9 @@ An extension being recognized does not guarantee every variant of that format is
 | Ctrl+C | Copy selected file(s) |
 
 Animations always loop. Use the playback slider to seek. Fullscreen controls appear
-on mouse movement and hide after two seconds. Esc never merely exits fullscreen.
+only when the pointer reaches the bottom edge, and hide after two seconds away from
+the controls. `/` also restores the default preference of not enlarging small images.
+Esc never merely exits fullscreen.
 
 Context menus provide image pixels, file/path copying, copy/move to a remembered
 destination, deletion and the native Windows Open With dialog. Copy image places
@@ -85,6 +91,8 @@ transparency background, and separate copy/move destinations are remembered.
 Run `dotnet test Pikvew.slnx` for the default suite. Double-click `test.bat` outside
 the agent sandbox to also enable registry and named-pipe integration tests. Those
 tests use isolated test keys/pipe names and do not overwrite application preferences.
+The test console stays open. Text output and TRX results are saved in
+`artifacts/test-results/test.log` and `artifacts/test-results/tests.trx`.
 
 Optional internet samples and approved reference frames can be downloaded with
 `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/fetch-samples.ps1`.
@@ -98,3 +106,8 @@ Manual acceptance remains necessary for actual mixed-DPI monitors, real UNC shar
 Open With, clipboard consumers, recycle-bin behavior and native integration outside
 the sandbox. External file changes are detected by asynchronous metadata polling
 every three seconds; unchanged listings keep their existing controls and selection.
+
+The application icon is authored as `src/Pikvew.App/Assets/Pikvew.svg` and converted
+to a multi-resolution ICO. No image generation service is used. The developer tool
+`tools/Pikvew.Bench` measures decode/seek performance and supports
+`--icon input.svg output.ico` for rebuilding the icon.
