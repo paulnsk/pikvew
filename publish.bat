@@ -7,14 +7,12 @@ rem pushd also supports launching this script from a UNC share.
 pushd "%~dp0"
 if errorlevel 1 goto :location_failed
 
-dotnet.exe publish "src\Pikvew.App\Pikvew.App.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -p:IncludeAllContentForSelfExtract=true -p:PublishTrimmed=false -p:DebugType=None -p:DebugSymbols=false -o "artifacts\release\win-x64"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "scripts\publish.ps1"
 if errorlevel 1 goto :failed
 
 if not exist "artifacts\release\win-x64\Pikvew.exe" goto :missing_exe
 
-if not exist "C:\tools\" goto :success
-copy /Y "artifacts\release\win-x64\Pikvew.exe" "C:\tools\Pikvew.exe"
-if errorlevel 1 goto :copy_failed
+goto :success
 
 :success
 color 2F
@@ -27,10 +25,6 @@ exit /b 0
 
 :missing_exe
 echo ERROR: Publish did not produce Pikvew.exe.
-goto :failed
-
-:copy_failed
-echo ERROR: Publish succeeded, but copying to C:\tools failed.
 goto :failed
 
 :failed

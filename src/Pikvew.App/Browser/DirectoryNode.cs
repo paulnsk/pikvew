@@ -32,9 +32,10 @@ public sealed class DirectoryNode : ObservableObject
         if (!placeholder) Children.Add(new DirectoryNode("", "Loading…", true));
     }
 
-    public Task LoadAsync()
+    public Task LoadAsync(bool refresh = false)
     {
-        if (_loaded || string.IsNullOrEmpty(Path)) return _loadingTask ?? Task.CompletedTask;
+        if (_loadingTask is { IsCompleted: false }) return _loadingTask;
+        if ((_loaded && !refresh) || string.IsNullOrEmpty(Path)) return _loadingTask ?? Task.CompletedTask;
         _loaded = true;
         return _loadingTask = LoadCoreAsync();
     }
@@ -86,8 +87,21 @@ public sealed class DirectoryNode : ObservableObject
                     .Select(p => new DirectoryNode(p)).ToArray());
             }
             finally { EnumerationSlots.Release(); }
-            Children.Clear();
-            foreach (var child in children) Children.Add(child);
+            // Preserve existing containers and selection when a directory gains children.
+            var wanted = children.Select(child => child.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            for (var index = Children.Count - 1; index >= 0; index--)
+                if (!wanted.Contains(Children[index].Path)) Children.RemoveAt(index);
+            var existing = Children.ToDictionary(child => child.Path, StringComparer.OrdinalIgnoreCase);
+            for (var index = 0; index < children.Length; index++)
+            {
+                var child = children[index];
+                if (!existing.TryGetValue(child.Path, out var retained)) Children.Insert(index, child);
+                else
+                {
+                    var oldIndex = Children.IndexOf(retained);
+                    if (oldIndex != index) Children.Move(oldIndex, index);
+                }
+            }
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {

@@ -41,6 +41,7 @@ public partial class App
             builder.Services.AddSingleton<RegistrySettingsStore>();
             builder.Services.AddSingleton(services => services.GetRequiredService<RegistrySettingsStore>().Load());
             builder.Services.AddSingleton<ImageLoader>();
+            builder.Services.AddSingleton<MetadataReader>();
             builder.Services.AddSingleton<ThumbnailCache>();
             builder.Services.AddSingleton<ImagePreloader>();
             builder.Services.AddSingleton<BrowserViewModel>();

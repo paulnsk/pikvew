@@ -24,6 +24,13 @@
       <Setter Property="Padding" Value="12,5" />
       <Setter Property="MinHeight" Value="30" />
     </Style>
+    <Style x:Key="HistoryButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+      <Setter Property="Width" Value="30" /><Setter Property="Height" Value="30" /><Setter Property="Margin" Value="3,0" /><Setter Property="Padding" Value="0" />
+      <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button">
+        <Border x:Name="Circle" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="15"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+        <ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Circle" Property="Background" Value="{DynamicResource HoverBrush}" /></Trigger><Trigger Property="IsEnabled" Value="False"><Setter Property="Opacity" Value="0.4" /></Trigger></ControlTemplate.Triggers>
+      </ControlTemplate></Setter.Value></Setter>
+    </Style>
     <ContextMenu x:Key="FileMenu" Opened="OnFileMenuOpened">
       <MenuItem Header="Copy image" Click="OnCopyImage" />
       <MenuItem Header="Copy file(s)" Click="OnCopyFiles" />
@@ -41,6 +48,11 @@
     <Grid x:Name="BrowserRoot" PreviewMouseWheel="OnBrowserWheel">
       <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
       <DockPanel Margin="10,7">
+        <Button x:Name="UpButton" DockPanel.Dock="Left" Click="OnUp" ToolTip="Parent folder (Alt+Up)" Width="32" Height="32" Padding="0" Margin="0,0,7,0" AutomationProperties.Name="Parent folder">
+          <Path Data="M2,9L9,2L16,9 M9,2V18" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.8" Width="15" Height="17" Stretch="Uniform" />
+        </Button>
+        <Button x:Name="BackButton" DockPanel.Dock="Left" Click="OnBack" ToolTip="Back (Alt+Left)" Style="{StaticResource HistoryButton}" AutomationProperties.Name="Back"><Path Data="M11,2L4,9L11,16" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.8" Width="8" Height="14" Stretch="Uniform" /></Button>
+        <Button x:Name="ForwardButton" DockPanel.Dock="Left" Click="OnForward" ToolTip="Forward (Alt+Right)" Style="{StaticResource HistoryButton}" AutomationProperties.Name="Forward"><Path Data="M4,2L11,9L4,16" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.8" Width="8" Height="14" Stretch="Uniform" /></Button>
         <Button DockPanel.Dock="Right" Content="File associations…" Click="OnAssociations" Margin="12,0,0,0" Padding="9,4" />
         <CheckBox DockPanel.Dock="Left" Content="Supported formats only" IsChecked="{Binding Browser.SupportedOnly}"
                   VerticalAlignment="Center" Margin="0,0,12,0" />
@@ -63,7 +75,7 @@
         </Grid.ColumnDefinitions>
         <TreeView x:Name="FolderTree" ItemsSource="{Binding Browser.Roots}"
                   SelectedItemChanged="OnDirectorySelected" BorderThickness="0"
-                  VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
+                  VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Standard" VirtualizingPanel.ScrollUnit="Pixel">
           <TreeView.ItemsPanel><ItemsPanelTemplate><controls:DirectoryTreePanel /></ItemsPanelTemplate></TreeView.ItemsPanel>
         </TreeView>
         <GridSplitter Grid.Column="1" Width="10" HorizontalAlignment="Stretch" Background="{DynamicResource SurfaceBrush}" Cursor="SizeWE">
@@ -101,11 +113,14 @@
                   <Grid>
                     <TextBlock Text="{Binding Kind}" HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.5" />
                     <controls:ThumbnailImage Stretch="Uniform" />
+                    <controls:FolderIcon Stretch="Uniform" Margin="12">
+                      <controls:FolderIcon.Style><Style TargetType="controls:FolderIcon"><Setter Property="Visibility" Value="Collapsed" /><Style.Triggers><DataTrigger Binding="{Binding IsDirectory}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers></Style></controls:FolderIcon.Style>
+                    </controls:FolderIcon>
                     <Grid>
                       <Grid.Style>
                         <Style TargetType="Grid">
                           <Setter Property="Visibility" Value="Collapsed" />
-                          <Style.Triggers><DataTrigger Binding="{Binding Supported}" Value="False"><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers>
+                          <Style.Triggers><DataTrigger Binding="{Binding IsUnsupported}" Value="True"><Setter Property="Visibility" Value="Visible" /></DataTrigger></Style.Triggers>
                         </Style>
                       </Grid.Style>
                       <Grid.RowDefinitions><RowDefinition Height="*" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
@@ -140,7 +155,7 @@
           <Button x:Name="UnsupportedOpenWith" Content="Open with…" Click="OnOpenWith" />
         </StackPanel>
       </StackPanel>
-      <Border x:Name="ViewerToolbar" Grid.Row="1" Background="#EB161616" Padding="12,8">
+      <Border x:Name="ViewerToolbar" Grid.Row="1" Panel.ZIndex="1" Background="#EB161616" Padding="12,8">
         <StackPanel>
           <Grid x:Name="PlaybackPanel" Visibility="{Binding Playback.IsAnimated, Converter={StaticResource BoolVisibility}}" Margin="0,0,0,7">
             <Grid.ColumnDefinitions>
@@ -172,6 +187,7 @@
           </TextBlock>
           <DockPanel>
             <Button DockPanel.Dock="Left" Content="Browser" Click="OnShowBrowser" Style="{StaticResource ToolbarButton}" ToolTip="Enter / double-click" />
+            <Button DockPanel.Dock="Left" Content="ⓘ" Click="OnInfo" Style="{StaticResource ToolbarButton}" ToolTip="Image information (I)" AutomationProperties.Name="Image information" />
             <Button DockPanel.Dock="Left" Click="OnRotateLeft" Style="{StaticResource ToolbarButton}" ToolTip="Rotate counterclockwise (Ctrl+Left)" AutomationProperties.Name="Rotate counterclockwise">
               <Path Data="M15,6 A7,7 0 1 0 17,12 M15,1 V6 H10" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}" StrokeThickness="1.7" Width="18" Height="18" Stretch="Uniform"><Path.LayoutTransform><ScaleTransform ScaleX="-1" /></Path.LayoutTransform></Path>
             </Button>
@@ -190,6 +206,22 @@
             <TextBlock Text="{Binding FileName}" Foreground="White" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="12,0" />
           </DockPanel>
         </StackPanel>
+      </Border>
+      <Border x:Name="MetadataPanel" Grid.Row="0" HorizontalAlignment="Right" Width="380" MaxWidth="{Binding ActualWidth, ElementName=ViewerRoot}" Background="{DynamicResource SurfaceBrush}" BorderBrush="{DynamicResource BorderBrush}" BorderThickness="1,0,0,0" Visibility="Collapsed" Padding="12">
+        <DockPanel>
+          <DockPanel DockPanel.Dock="Top" Margin="0,0,0,10">
+            <Button DockPanel.Dock="Right" Content="×" Click="OnInfo" ToolTip="Hide image information (I)" Padding="8,2" />
+            <CheckBox x:Name="InfoPin" DockPanel.Dock="Right" Content="Pin" Click="OnInfoPin" VerticalAlignment="Center" Margin="8,0" />
+            <TextBlock Text="Image information" FontSize="16" VerticalAlignment="Center" />
+          </DockPanel>
+          <DataGrid x:Name="MetadataTable" IsReadOnly="True" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False" CanUserSortColumns="True" HeadersVisibility="Column" RowHeaderWidth="0" GridLinesVisibility="None" Background="{DynamicResource SurfaceBrush}" Foreground="{DynamicResource ForegroundBrush}" RowBackground="{DynamicResource EditorBrush}" BorderThickness="0" SelectionUnit="FullRow" ClipboardCopyMode="IncludeHeader" ToolTip="Copy selected rows (Ctrl+C)">
+            <DataGrid.Resources>
+              <Style TargetType="DataGridColumnHeader"><Setter Property="Background" Value="{DynamicResource SurfaceBrush}" /><Setter Property="Foreground" Value="{DynamicResource ForegroundBrush}" /><Setter Property="Padding" Value="4,7" /></Style>
+              <Style TargetType="DataGridCell"><Setter Property="Foreground" Value="{DynamicResource ForegroundBrush}" /><Setter Property="BorderThickness" Value="0" /><Setter Property="Padding" Value="3" /></Style>
+            </DataGrid.Resources>
+            <DataGrid.Columns><DataGridTextColumn Header="Field" Binding="{Binding Name}" Width="135" /><DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="*"><DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap" /><Setter Property="Padding" Value="3" /></Style></DataGridTextColumn.ElementStyle></DataGridTextColumn></DataGrid.Columns>
+          </DataGrid>
+        </DockPanel>
       </Border>
     </Grid>
   </Grid>

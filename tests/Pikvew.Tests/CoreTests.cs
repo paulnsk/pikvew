@@ -6,6 +6,22 @@ namespace Pikvew.Tests;
 public sealed class CoreTests
 {
     [Fact]
+    public void BrowserHistoryRestoresLocationAndDiscardsForwardBranch()
+    {
+        var history = new BrowserHistory();
+        history.Visit(new("", [], 0), @"C:\a");
+        history.Visit(new(@"C:\a", [@"C:\a\1.png"], 125), @"C:\b");
+        var previous = history.Move(-1, new(@"C:\b", [@"C:\b\2.png"], 42));
+        Assert.Equal(@"C:\a", previous!.Path);
+        Assert.Equal(125, previous.Offset);
+        Assert.Equal([@"C:\a\1.png"], previous.Selection);
+        Assert.Equal(42, history.Move(1, previous)!.Offset);
+        history.Move(-1, new(@"C:\b", [], 42));
+        history.Visit(previous, @"C:\c");
+        Assert.False(history.CanForward);
+        Assert.Equal(@"C:\a", history.Move(-1, new(@"C:\c", [], 0))!.Path);
+    }
+    [Fact]
     public void NaturalSortHandlesNumbersAndUnboundedNumericRuns()
     {
         string[] names = ["12.jpg", "2.jpg", "10.jpg", "1.jpg", "999999999999999999999999.jpg", "1000000000000000000000000.jpg"];

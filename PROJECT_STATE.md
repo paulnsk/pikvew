@@ -4,6 +4,71 @@
 
 ## Текущее состояние
 
+- Финальные проверки седьмого прохода: **60 passed, 4 skipped, 0 failed / 64**.
+  Skips — 3 registry cases + pipe integration, включаются в test.bat вне sandbox.
+  UI smoke проверил enter папки, Up select departed folder, Back/Forward, native
+  folder icon >=128px, I/metadata rows/Pin, оба custom delete confirms (Cancel default,
+  icon46/64). Счётчик версий reset/increment проверен отдельным тестом. Rider warnings0.
+  Просмотрено 4 скриншота: browser folders / metadata / permanent dialog (старый crop
+  + итоговый полный); новый диалог borderless с rounded frame и theme resources.
+- Дополнительно исправлены новые внешние папки после empty probe: LoadAsync(refresh)
+  с merge существующих DirectoryNode вместо Clear, lookup miss при reveal перечитывает
+  родителя. Тест сохраняет identity/selection существующих узлов.
+- На Temp с >2700 папок выявлен recycle ancestor во время programmatic reveal.
+  Tree использует Standard virtualization + pixel scrolling; короткая цепочка
+  контейнеров удерживается до окончания queued scroll (ref-count для concurrent
+  reveals), index -1 не передаётся в VSP, реальные async FS enumeration не блокируются.
+  Программные container events не портят историю. Диагностический listener удалён.
+- Готовится commit и первый release через scripts/release.ps1; все остальные
+  исходные изменения завершены. Финальный EXE ещё НЕ загружен; следующий шаг release.
+
+- Седьмой проход реализован: folder metadata/cards + native 256px folder icon,
+  folder-only navigation, history snapshots и квадратный Up / круглые Back/Forward,
+  Alt shortcuts/tooltips, selection при Open/OpenWith, idle cursor и edge24 overlays,
+  common EXIF/IPTC/XMP reader + table/I/Pin/copy, themed delete confirm Cancel default,
+  mixed recycle/permanent batches подтверждаются ДО первого удаления. Read metadata
+  закрывает file handle; JPEG EXIF проверен. MetadataPinned в registry.
+- Выявлен тестом и исправлен history Forward: container realization при RevealTree
+  мог породить ложную user selection; локальный guard только на синхронную реализацию
+  контейнеров, фоновые перечисления UI не блокируют.
+- Версионирование: Version.props (Major 0 / Minor 0 до первого release), build target
+  только для App, atomic local counter artifacts/version-counter.txt, reset tests
+  0.1.1 -> 0.1.2 -> 0.2.1 -> 1.1.1 -> 1.1.2 прошли. MinorVersionMajor marker позволяет
+  вручную менять только Major. Release script поднимет minor до 1, BuildFloor сохраняет
+  опубликованный build для нового checkout. README сокращён до описания + shortcuts.
+- Публикации для сравнения: artifacts/bench/plain/Pikvew.exe 173827212 bytes,
+  compressed 79664861 bytes. Native bundle manifest parsed scripts/audit-bundle.py:
+  261 entry, compressed 259; PDB/XML docs/source/log/TRX нет. Satellite languages=en.
+  Сжатие оставляем; AOT/trimming выключены для WPF.
+- Startup measurements scripts/measure-startup.ps1 (hidden own processes, до создания
+  main window, НЕ до decode): plain fresh-extraction1511.3ms, warm588.5/605.7/598.1;
+  compressed fresh-extraction2652.5ms, warm649.2/614.7/608.3. OS filesystem cache warm
+  во всех случаях; результаты artifacts/bench/startup.json, это не cold-disk benchmark.
+- GitHub preflight успешен: paulnsk/pikvew push=true, releases=0. GCM credentials
+  доступны через прямой вызов git-credential-manager.exe с username=paulnsk.
+  PowerShell HTTPS в sandbox не работает; scripts/github-api.py использует Python
+  stdlib TLS + Git CA bundle, никаких токенов в файлах/логах. Release.bat требует
+  .NET10 SDK + Git for Windows/GCM + Python. Релиз ещё НЕ создан, нужен final test /
+  commit и scripts/release.ps1 (сам publish, bump minor, commit/push, draft+upload+
+  digest verification+publish; title/body только Pikvew version).
+
+- Седьмой проход ОДОБРЕН: fullscreen idle cursor 1s только над изображением;
+  папки-карточки (только навигация, всегда раньше файлов и видны при SupportedOnly);
+  Up первым квадратным, Back/Forward круглыми, history restores selection/scroll,
+  Up selects departed folder, Alt+Up/Left/Right; hotkeys в tooltips. Open/OpenWith
+  сначала выбирают tile. Справа metadata overlay: edge 24 DIP, bottom тоже 24,
+  hide 2s после ухода, I/pin, window+fullscreen, common EXIF/IPTC/XMP + file info.
+  Delete всегда theme-aware custom confirm с Cancel default; permanent красный
+  крупный question glyph, UNC/no recycle тоже permanent confirmation.
+- Версии major.minor.build: Major только пользователь, сейчас 0. Minor +1 при
+  GitHub release; Build +1 на реальный build приложения, reset=1 при major/minor;
+  minor reset=1 при major. Реализовать правила, короткий README+неочевидные hotkeys,
+  первый GitHub release 0.1.x с published self-contained single EXE; title/body
+  только Pikvew + version. Release/commit/push авторизованы без новой отмашки.
+- AOT/trimming не включать для WPF. Проверить bundle contents на PDB/мусор и
+  сравнить single-file compression по размеру/запуску; не называть замеры cold disk
+  (fresh compiled files в OS cache). После проверки выбрать compression.
+
 - Шестой проход: AssociationDialog теперь выбирает только цель операции, все
   галочки изначально сняты. Две кнопки Add registration / Remove registration
   (disabled без выбора); Add объединяет отмеченные с текущей регистрацией, Remove

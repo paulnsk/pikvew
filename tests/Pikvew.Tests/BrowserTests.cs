@@ -8,6 +8,48 @@ namespace Pikvew.Tests;
 
 public sealed class BrowserTests
 {
+    [Fact]
+    public async Task EmptyProbeCanBeRefreshedAfterFoldersAreCreatedAndKeepsExistingNodes()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "PikvewProbe-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var node = new DirectoryNode(directory);
+            await node.ProbeChildrenAsync();
+            Assert.Empty(node.Children);
+            Directory.CreateDirectory(Path.Combine(directory, "2"));
+            await node.LoadAsync(refresh: true);
+            var retained = Assert.Single(node.Children);
+            retained.IsSelected = true;
+            Directory.CreateDirectory(Path.Combine(directory, "1"));
+            await node.LoadAsync(refresh: true);
+            Assert.Equal(["1", "2"], node.Children.Select(n => n.Name));
+            Assert.Same(retained, node.Children[1]);
+            Assert.True(retained.IsSelected);
+        }
+        finally { Directory.Delete(directory, true); }
+    }
+    [Fact]
+    public async Task FolderCardsAreAlwaysVisibleAndSortedBeforeFiles()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "PikvewFolders-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(Path.Combine(directory, "10"));
+        Directory.CreateDirectory(Path.Combine(directory, "2"));
+        await File.WriteAllTextAsync(Path.Combine(directory, "1.png"), "image placeholder");
+        await File.WriteAllTextAsync(Path.Combine(directory, "notes.txt"), "text");
+        try
+        {
+            var browser = Create(new FileCatalog());
+            await browser.OpenDirectoryAsync(directory);
+            Assert.Equal(["2", "10", "1.png"], browser.Files.Select(f => f.Name));
+            Assert.All(browser.Files.Take(2), f => { Assert.True(f.IsDirectory); Assert.False(f.Supported); Assert.False(f.IsUnsupported); });
+            browser.SupportedOnly = false;
+            browser.Sort = "Name";
+            Assert.Equal(["10", "2", "1.png", "notes.txt"], browser.Files.Select(f => f.Name));
+        }
+        finally { Directory.Delete(directory, true); }
+    }
     private static BrowserViewModel Create(IFileCatalog catalog)
     {
         var loader = new ImageLoader();

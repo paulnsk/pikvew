@@ -8,6 +8,23 @@ namespace Pikvew.Tests;
 
 public sealed class ImagingTests : IDisposable
 {
+    [Fact]
+    public async Task MetadataReadsExifAndReleasesTheOriginalFile()
+    {
+        var path = Path.Combine(_directory, "metadata.jpg");
+        using (var image = new MagickImage(MagickColors.Red, 32, 24))
+        {
+            var exif = new ExifProfile();
+            exif.SetValue(ExifTag.Make, "Pikvew test camera");
+            exif.SetValue(ExifTag.DateTimeOriginal, "2026:11:01 12:34:56");
+            image.SetProfile(exif);
+            image.Write(path);
+        }
+        var rows = await new MetadataReader().ReadAsync(path, CancellationToken.None);
+        Assert.Contains(rows, r => r.Name == "Dimensions" && r.Value == "32 × 24");
+        Assert.Contains(rows, r => r.Name == "EXIF / Make" && r.Value == "Pikvew test camera");
+        File.Move(path, path + ".moved");
+    }
     private readonly string _directory = Path.Combine(Path.GetTempPath(), "PikvewTests-" + Guid.NewGuid().ToString("N"));
     private readonly ImageLoader _loader = new();
     public ImagingTests() => Directory.CreateDirectory(_directory);

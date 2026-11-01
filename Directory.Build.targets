@@ -1,0 +1,15 @@
+<Project>
+  <Target Name="IncrementPikvewBuildVersion" BeforeTargets="PrepareForBuild" Condition="'$(MSBuildProjectName)' == 'Pikvew.App' and '$(DesignTimeBuild)' != 'true'">
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\build-version.ps1&quot; -Repository &quot;$(MSBuildThisFileDirectory).&quot; -Output &quot;$(MSBuildProjectDirectory)\$(IntermediateOutputPath)build-version.txt&quot;" />
+    <ReadLinesFromFile File="$(MSBuildProjectDirectory)\$(IntermediateOutputPath)build-version.txt"><Output TaskParameter="Lines" PropertyName="Version" /></ReadLinesFromFile>
+    <PropertyGroup>
+      <AssemblyVersion>$(Version).0</AssemblyVersion>
+      <FileVersion>$(Version).0</FileVersion>
+      <InformationalVersion>$(Version)</InformationalVersion>
+      <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+    </PropertyGroup>
+  </Target>
+  <Target Name="WritePikvewPublishAudit" AfterTargets="ComputeFilesToPublish" Condition="'$(MSBuildProjectName)' == 'Pikvew.App'">
+    <WriteLinesToFile File="$(MSBuildThisFileDirectory)artifacts\publish-files.txt" Lines="@(ResolvedFileToPublish->'%(RelativePath)|%(FullPath)')" Overwrite="true" />
+  </Target>
+</Project>

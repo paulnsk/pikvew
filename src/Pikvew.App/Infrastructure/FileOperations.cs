@@ -82,9 +82,13 @@ public sealed class FileOperations(UserSettings settings)
     public async Task DeleteAsync(Window owner, IReadOnlyList<string> files, bool permanently)
     {
         if (files.Count == 0) return;
-        if (files.Count > 1 && MessageBox.Show(owner,
-                permanently ? $"Permanently delete {files.Count} files?" : $"Delete {files.Count} files?",
-                "Pikvew", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) != MessageBoxResult.Yes) return;
-        foreach (var file in files) await Task.Run(() => WindowsShell.Delete(file, permanently));
+        var destinations = await Task.Run(() => files.Select(path => (Path: path, Permanent: permanently || !WindowsShell.CanRecycle(path))).ToArray());
+        // One explicit confirmation per destination, including mixed local/UNC selections.
+        foreach (var group in destinations.GroupBy(file => file.Permanent))
+        {
+            var batch = group.ToArray();
+            if (!DeleteConfirmation.Show(owner, batch.Length, Path.GetFileName(batch[0].Path), group.Key)) return;
+        }
+        foreach (var file in destinations) await Task.Run(() => WindowsShell.Delete(file.Path, file.Permanent));
     }
 }

@@ -1,6 +1,6 @@
 namespace Pikvew.App.Browser;
 
-public sealed record FileMetadata(string Path, DateTime Modified, long Length);
+public sealed record FileMetadata(string Path, DateTime Modified, long Length, bool IsDirectory = false);
 
 public interface IFileCatalog
 {
@@ -12,10 +12,12 @@ public sealed class FileCatalog : IFileCatalog
     public Task<IReadOnlyList<FileMetadata>> ListAsync(string directory, CancellationToken cancellationToken) => Task.Run<IReadOnlyList<FileMetadata>>(() =>
     {
         var files = new List<FileMetadata>();
-        foreach (var file in new DirectoryInfo(directory).EnumerateFiles())
+        foreach (var entry in new DirectoryInfo(directory).EnumerateFileSystemInfos())
         {
             cancellationToken.ThrowIfCancellationRequested();
-            files.Add(new FileMetadata(file.FullName, file.LastWriteTimeUtc, file.Length));
+            files.Add(entry is DirectoryInfo
+                ? new FileMetadata(entry.FullName, entry.LastWriteTimeUtc, 0, true)
+                : new FileMetadata(entry.FullName, entry.LastWriteTimeUtc, ((FileInfo)entry).Length));
         }
         return files;
     }, cancellationToken);

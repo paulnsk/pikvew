@@ -12,6 +12,7 @@ using Pikvew.App.Browser;
 using Pikvew.App.Infrastructure;
 using Pikvew.Core;
 using Pikvew.App.Controls;
+using Pikvew.App.Imaging;
 
 namespace Pikvew.App;
 
@@ -35,17 +36,20 @@ public partial class MainWindow
     private bool _restoringSelection;
     private int _openRequestVersion;
     private int _treeNavigationVersion;
+    private bool _synchronizingTreeContainers;
 
-    public MainWindow(MainViewModel model, UserSettings settings, RegistrySettingsStore settingsStore, FileOperations operations)
+    public MainWindow(MainViewModel model, UserSettings settings, RegistrySettingsStore settingsStore, FileOperations operations, MetadataReader metadataReader)
     {
         _model = model;
         _settings = settings;
         _settingsStore = settingsStore;
         _operations = operations;
+        _metadataReader = metadataReader;
         _browserSelection = settings.SelectedFiles;
         InitializeComponent();
         DataContext = model;
         _placement = new WindowPlacement(this, settings);
+        InitializeOverlays();
         TreeColumn.Width = new GridLength(settings.TreeWidth);
         _browserOffset = settings.BrowserOffset;
         ImageCanvas.Transparency = settings.Transparency;
@@ -95,7 +99,7 @@ public partial class MainWindow
             if (arguments.Length == 0)
             {
                 ShowBrowser(reveal: false);
-                await _model.Browser.OpenDirectoryAsync(_settings.LastDirectory);
+                await OpenFolderAsync(_settings.LastDirectory);
                 await RevealTreeAsync();
                 RestoreBrowserSelection();
             }
@@ -108,17 +112,19 @@ public partial class MainWindow
                 if (directory)
                 {
                     ShowBrowser(reveal: false);
-                    await _model.Browser.OpenDirectoryAsync(path);
+                    await OpenFolderAsync(path);
                     await RevealTreeAsync();
                 }
                 else
                 {
+                    RecordFolderVisit(Path.GetDirectoryName(path)!);
                     _browserSelection = [];
                     _browserOffset = 0;
                     UpdateView(true);
                     _placement.SetFullscreen(_settings.Fullscreen);
                     UpdateToolbarLayout();
                     await _model.OpenExternalAsync(path);
+                    UpdateNavigationButtons();
                 }
             }
         });
@@ -134,13 +140,14 @@ public partial class MainWindow
 
     private void OnBrowserChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(BrowserViewModel.DirectoryPath)) UpdateNavigationButtons();
         if (e.PropertyName == nameof(BrowserViewModel.Files))
             Dispatcher.InvokeAsync(RestoreBrowserSelection, DispatcherPriority.Loaded);
     }
 
     private void OnPlaybackChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is not (nameof(Imaging.PlaybackController.Position) or nameof(Imaging.PlaybackController.Duration))) return;
+        if (e.PropertyName is not (nameof(PlaybackController.Position) or nameof(PlaybackController.Duration))) return;
         if (_scrubbing) return;
         _syncSeek = true;
         SeekSlider.Value = _model.Playback.Position;
@@ -149,14 +156,17 @@ public partial class MainWindow
 
     private void OnImageOpened()
     {
+        MetadataImageChanged();
         ImageCanvas.SetImage(_model.Playback.Document?.FirstFrame, true, _model.Playback.Document?.PreviewFrame);
         if (_model.IsViewing) ImageCanvas.Focus();
     }
 
     private void UpdateView(bool viewing)
     {
+        RestoreCursor();
         BrowserRoot.Visibility = viewing ? Visibility.Collapsed : Visibility.Visible;
         ViewerRoot.Visibility = viewing ? Visibility.Visible : Visibility.Collapsed;
+        if (viewing && InfoPin.IsChecked == true) ShowInfo();
     }
 
     private void RememberBrowser()
@@ -199,6 +209,7 @@ public partial class MainWindow
     {
         if (_model.IsViewing) { ShowBrowser(); return; }
         if (Files.SelectedItem is not FileItem item) return;
+        if (item.IsDirectory) { await OpenFolderAsync(item.Path); await RevealTreeAsync(); Files.Focus(); return; }
         if (!item.Supported) { await WindowsShell.OpenAsync(item.Path); return; }
         RememberBrowser();
         UpdateView(true);
@@ -219,6 +230,7 @@ public partial class MainWindow
 
     private void UpdateToolbarLayout()
     {
+        RestoreCursor();
         // Fullscreen controls overlay the image; showing/hiding them never changes fit or pan.
         Grid.SetRow(ViewerToolbar, _placement.IsFullscreen ? 0 : 1);
         ViewerToolbar.VerticalAlignment = VerticalAlignment.Bottom;
@@ -229,6 +241,7 @@ public partial class MainWindow
         ViewerToolbar.Visibility = _placement.IsFullscreen ? Visibility.Collapsed : Visibility.Visible;
         if (_placement.IsFullscreen) _overlayTimer.Stop();
         else _overlayTimer.Stop();
+        if (_placement.IsFullscreen) _cursorTimer.Start();
     }
 
     private nint WindowMessage(nint hwnd, int message, nint wparam, nint lparam, ref bool handled)
@@ -251,6 +264,15 @@ public partial class MainWindow
             return;
         }
         if (Keyboard.FocusedElement is TextBoxBase || Keyboard.FocusedElement is ComboBox) return;
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        if (!_model.IsViewing && (Keyboard.Modifiers & ModifierKeys.Alt) != 0 && key is Key.Up or Key.Left or Key.Right)
+        {
+            e.Handled = true;
+            await RunAsync(() => key == Key.Up ? GoUpAsync() : GoHistoryAsync(key == Key.Left ? -1 : 1));
+            return;
+        }
+        if (_model.IsViewing && e.Key == Key.I && Keyboard.Modifiers == ModifierKeys.None) { e.Handled = true; OnInfo(this, e); return; }
+        if (MetadataPanel.IsKeyboardFocusWithin) return;
         if (!_model.IsViewing && ctrl && e.Key is Key.Left or Key.Right or Key.Up or Key.Down)
         {
             e.Handled = true;
@@ -301,6 +323,7 @@ public partial class MainWindow
 
     private void OnMouseDown(object sender, MouseButtonEventArgs e)
     {
+        RestoreCursor();
         if (e.ChangedButton == MouseButton.Middle && _model.IsViewing) { e.Handled = true; ToggleFullscreen(); }
     }
     private async void OnViewerClick(object sender, MouseButtonEventArgs e)
@@ -315,8 +338,9 @@ public partial class MainWindow
     }
     private void OnViewerMouseMove(object sender, MouseEventArgs e)
     {
+        TrackViewerMouse(e);
         if (!_placement.IsFullscreen) return;
-        if (!ViewerToolbar.IsMouseOver && e.GetPosition(ViewerRoot).Y < ViewerRoot.ActualHeight - 4) return;
+        if (!ViewerToolbar.IsMouseOver && e.GetPosition(ViewerRoot).Y < ViewerRoot.ActualHeight - 24) return;
         ViewerToolbar.Visibility = Visibility.Visible;
         _overlayTimer.Stop();
         _overlayTimer.Start();
@@ -340,7 +364,7 @@ public partial class MainWindow
     }
     private async void OnDirectorySelected(object sender, RoutedPropertyChangedEventArgs<object> e)
     {
-        if (_model.Browser.IsSynchronizingTreeSelection) return;
+        if (_model.Browser.IsSynchronizingTreeSelection || _synchronizingTreeContainers) return;
         if (e.NewValue is DirectoryNode selected) _ = selected.ProbeChildrenAsync(refresh: true);
         if (e.NewValue is DirectoryNode { Path.Length: > 0 } node && !string.Equals(node.Path, _model.Browser.DirectoryPath, StringComparison.OrdinalIgnoreCase))
         {
@@ -362,42 +386,86 @@ public partial class MainWindow
             if (item.IsSelected) BringTreeHeaderIntoView(item);
         }, DispatcherPriority.Loaded);
     }
+    private int _treeRevealVersion;
+    private readonly Dictionary<TreeViewItem, int> _treeRevealPins = [];
+    private void PinTreeItem(TreeViewItem item)
+    {
+        _treeRevealPins.TryGetValue(item, out var count);
+        _treeRevealPins[item] = count + 1;
+        VirtualizingPanel.SetIsContainerVirtualizable(item, false);
+    }
+    private void UnpinTreeItem(TreeViewItem item)
+    {
+        if (_treeRevealPins[item] > 1) _treeRevealPins[item]--;
+        else { _treeRevealPins.Remove(item); VirtualizingPanel.SetIsContainerVirtualizable(item, true); }
+    }
     private async Task RevealTreeAsync()
     {
+        var version = ++_treeRevealVersion;
         await _model.Browser.RevealCurrentDirectoryAsync();
         var target = _model.Browser.DirectoryPath.TrimEnd('\\');
-        if (string.IsNullOrEmpty(target) || _closing) return;
-        await Dispatcher.InvokeAsync(() =>
+        if (string.IsNullOrEmpty(target) || _closing || version != _treeRevealVersion) return;
+        ItemsControl parent = FolderTree;
+        IEnumerable<DirectoryNode> candidates = _model.Browser.Roots;
+        var pinned = new List<TreeViewItem>();
+        try
         {
-            ItemsControl parent = FolderTree;
-            IEnumerable<DirectoryNode> candidates = _model.Browser.Roots;
             while (true)
             {
-                var node = candidates.FirstOrDefault(n => !string.IsNullOrEmpty(n.Path)
+                if (_closing || version != _treeRevealVersion || !target.Equals(_model.Browser.DirectoryPath.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)) return;
+                var node = candidates.FirstOrDefault(n => n.Path.Length > 0
                     && (target.Equals(n.Path.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)
                     || target.StartsWith(n.Path.TrimEnd('\\') + "\\", StringComparison.OrdinalIgnoreCase)));
                 if (node is null) return;
-                parent.ApplyTemplate();
-                parent.UpdateLayout();
-                var item = parent.ItemContainerGenerator.ContainerFromItem(node) as TreeViewItem;
-                if (item is null)
+                TreeViewItem? item = null;
+                for (var attempt = 0; attempt < 3 && item is null; attempt++)
                 {
-                    FindVisual<DirectoryTreePanel>(parent)?.Realize(parent.Items.IndexOf(node));
-                    parent.UpdateLayout();
-                    item = parent.ItemContainerGenerator.ContainerFromItem(node) as TreeViewItem;
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        _synchronizingTreeContainers = true;
+                        try
+                        {
+                            parent.ApplyTemplate();
+                            parent.UpdateLayout();
+                            var index = parent.Items.IndexOf(node);
+                            if (index < 0) return;
+                            FindVisual<DirectoryTreePanel>(parent)?.Realize(index);
+                            parent.UpdateLayout();
+                            item = parent.ItemContainerGenerator.ContainerFromItem(node) as TreeViewItem;
+                            if (item is null) return;
+                            // Hierarchical virtualization can recycle an ancestor while a
+                            // descendant is being realized. Pin only this short path until
+                            // the final scroll has completed, leaving the rest virtualized.
+                            PinTreeItem(item);
+                            pinned.Add(item);
+                            BringTreeHeaderIntoView(item);
+                        }
+                        finally { _synchronizingTreeContainers = false; }
+                    }, DispatcherPriority.Loaded);
+                    await Dispatcher.Yield(DispatcherPriority.Loaded);
                 }
-                if (item is null) return;
+                if (item is null || _closing || version != _treeRevealVersion) return;
+                _synchronizingTreeContainers = true;
+                try
+                {
+                    if (target.Equals(node.Path.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
+                    {
+                        item.SetCurrentValue(TreeViewItem.IsSelectedProperty, true);
+                        BringTreeHeaderIntoView(item);
+                    }
+                    else item.SetCurrentValue(TreeViewItem.IsExpandedProperty, true);
+                }
+                finally { _synchronizingTreeContainers = false; }
                 if (target.Equals(node.Path.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
                 {
-                    item.SetCurrentValue(TreeViewItem.IsSelectedProperty, true);
-                    BringTreeHeaderIntoView(item);
+                    await Dispatcher.Yield(DispatcherPriority.Loaded);
                     return;
                 }
-                item.IsExpanded = true;
                 parent = item;
                 candidates = node.Children;
             }
-        }, DispatcherPriority.Loaded);
+        }
+        finally { foreach (var item in pinned) UnpinTreeItem(item); }
     }
     private async Task NavigateTreeAsync(TreeDirection direction)
     {
@@ -422,12 +490,14 @@ public partial class MainWindow
         if (sender is FrameworkElement { DataContext: BreadcrumbPart part })
             await RunAsync(async () => { await OpenFolderAsync(part.Path); await RevealTreeAsync(); });
     }
-    private async Task OpenFolderAsync(string path)
+    private async Task OpenFolderAsync(string path, bool recordHistory = true)
     {
+        if (recordHistory) RecordFolderVisit(path);
         _browserSelection = [];
         _browserOffset = 0;
         if (_model.IsViewing) ShowBrowser(reveal: false);
         await _model.Browser.OpenDirectoryAsync(path);
+        UpdateNavigationButtons();
     }
     private void OnDragOver(object sender, DragEventArgs e)
     { e.Effects = e.Data.GetDataPresent(DataFormats.FileDrop) ? DragDropEffects.Copy : DragDropEffects.None; e.Handled = true; }
@@ -463,14 +533,15 @@ public partial class MainWindow
 
     private string[] SelectedPaths() => _model.IsViewing
         ? string.IsNullOrEmpty(_model.CurrentPath) ? [] : [_model.CurrentPath]
-        : Files.SelectedItems.Cast<FileItem>().Select(f => f.Path).ToArray();
+        : Files.SelectedItems.Cast<FileItem>().Where(f => !f.IsDirectory).Select(f => f.Path).ToArray();
     private void OnFileMenuOpened(object sender, RoutedEventArgs e)
     {
+        RestoreCursor();
         if (sender is not ContextMenu menu) return;
         var selected = SelectedPaths();
         foreach (var item in menu.Items.OfType<MenuItem>()) item.IsEnabled = selected.Length > 0 && !_fileOperation;
         if (menu.Items[0] is MenuItem copyImage)
-            copyImage.IsEnabled = !_fileOperation && (_model.IsViewing ? ImageCanvas.Source is not null : Files.SelectedItems.Count == 1);
+            copyImage.IsEnabled = !_fileOperation && (_model.IsViewing ? ImageCanvas.Source is not null : Files.SelectedItems.Count == 1 && Files.SelectedItem is FileItem { Supported: true });
     }
     private bool IsContextMenuOpen() => ((ContextMenu)Resources["FileMenu"]!).IsOpen;
     private async void OnCopyImage(object sender, RoutedEventArgs e)
@@ -480,7 +551,7 @@ public partial class MainWindow
             BitmapSource? bitmap = ImageCanvas.Source;
             if (!_model.IsViewing && SelectedPaths().FirstOrDefault() is { } file)
             {
-                var loader = new Imaging.ImageLoader();
+                var loader = new ImageLoader();
                 await using var document = await loader.LoadAsync(file, CancellationToken.None);
                 bitmap = document.FirstFrame;
             }
@@ -513,12 +584,16 @@ public partial class MainWindow
     {
         e.Handled = true;
         if (sender is FrameworkElement { DataContext: FileItem file })
+        {
+            SelectTile(file);
             await RunAsync(() => { WindowsShell.OpenWith(this, file.Path); return Task.CompletedTask; });
+        }
     }
     private async void OnOpen(object sender, RoutedEventArgs e)
     {
         e.Handled = true;
         var path = sender is FrameworkElement { DataContext: FileItem file } ? file.Path : SelectedPaths().FirstOrDefault();
+        if (sender is FrameworkElement { DataContext: FileItem tile }) SelectTile(tile);
         if (!string.IsNullOrEmpty(path)) await RunAsync(() => WindowsShell.OpenAsync(path));
     }
     private async void OnAssociations(object sender, RoutedEventArgs e)
@@ -544,6 +619,7 @@ public partial class MainWindow
     private async Task FileCommandAsync(Func<Task> action)
     {
         if (_fileOperation) return;
+        RestoreCursor();
         _fileOperation = true;
         try { await RunAsync(action); }
         finally { _fileOperation = false; await RefreshAsync(); }
@@ -566,7 +642,7 @@ public partial class MainWindow
         try { await action(); }
         catch (OperationCanceledException) { }
         catch (Exception exception)
-        { if (!_closing) MessageBox.Show(this, exception.Message, "Pikvew", MessageBoxButton.OK, MessageBoxImage.Error); }
+        { if (!_closing) { RestoreCursor(); MessageBox.Show(this, exception.Message, "Pikvew", MessageBoxButton.OK, MessageBoxImage.Error); } }
     }
 
     private void OnClosing(object? sender, CancelEventArgs e)
@@ -579,7 +655,7 @@ public partial class MainWindow
         _settings.TreeWidth = TreeColumn.ActualWidth;
         _settings.BrowserOffset = _browserOffset;
         _settings.SelectedFiles = _browserSelection;
-        if (!_model.IsViewing && Files.SelectedItem is FileItem selected) _settings.LastFile = selected.Path;
+        if (!_model.IsViewing && Files.SelectedItem is FileItem { IsDirectory: false } selected) _settings.LastFile = selected.Path;
         try { _settingsStore.Save(_settings); }
         catch (Exception exception) { System.Diagnostics.Trace.TraceError("Settings save failed: {0}", exception); }
     }

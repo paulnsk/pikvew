@@ -80,7 +80,7 @@ public sealed class UiSmokeTests
         var browser = new BrowserViewModel(loader, cache, settings, new FileCatalog());
         var playback = new PlaybackController();
         var model = new MainViewModel(loader, settings, browser, playback, new ImagePreloader(loader));
-        var window = new MainWindow(model, settings, new RegistrySettingsStore(@"Software\Pikvew.Tests\UI"), new FileOperations(settings))
+        var window = new MainWindow(model, settings, new RegistrySettingsStore(@"Software\Pikvew.Tests\UI"), new FileOperations(settings), new MetadataReader())
         { ShowActivated = false, ShowInTaskbar = false, Left = -20000, Top = -20000 };
         try
         {
@@ -116,7 +116,7 @@ public sealed class UiSmokeTests
             { RoutedEvent = Keyboard.PreviewKeyDownEvent });
             await Task.Delay(100);
             Assert.False(model.IsViewing);
-            Assert.Equal(80, browser.Files.Count);
+            Assert.Equal(80, browser.Files.Count(f => !f.IsDirectory));
             var list = (ListBox)window.FindName("Files");
             list.SelectedIndex = 0;
             window.UpdateLayout();
@@ -132,6 +132,15 @@ public sealed class UiSmokeTests
             await window.OpenArgumentsAsync([subdirectory]);
             await Task.Delay(150);
             var tree = (TreeView)window.FindName("FolderTree");
+            IEnumerable<DirectoryNode> Branch(IEnumerable<DirectoryNode> nodes)
+            {
+                foreach (var node in nodes.Where(n => subdirectory.StartsWith(n.Path, StringComparison.OrdinalIgnoreCase) && n.Path.Length > 0))
+                {
+                    yield return node;
+                    foreach (var child in Branch(node.Children)) yield return child;
+                }
+            }
+            Assert.True(tree.SelectedItem is not null, "Current=" + browser.DirectoryPath + "; " + string.Join(" | ", Branch(browser.Roots).Select(n => $"{n.Name}: expanded={n.IsExpanded}, selected={n.IsSelected}, children={n.Children.Count}, container={FindTreeItem(tree, n.Path) is not null}")));
             Assert.Equal(subdirectory, ((DirectoryNode)tree.SelectedItem).Path);
             Assert.True(FindVisual<ScrollViewer>(tree)!.VerticalOffset > 0);
             var siblingPath = Path.Combine(directory, "folder498");
@@ -145,9 +154,57 @@ public sealed class UiSmokeTests
             Assert.True(tree.IsKeyboardFocusWithin);
             Assert.Empty(browser.Files);
             await window.OpenArgumentsAsync([directory]);
-            Assert.Equal(80, browser.Files.Count);
+            Assert.Equal(80, browser.Files.Count(f => !f.IsDirectory));
+            Assert.True((await WindowsShell.GetFolderIconAsync()).PixelWidth >= 128);
+            list.SelectedItem = browser.Files.First(f => f.Path == siblingPath);
+            window.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(window)!, 0, Key.Enter) { RoutedEvent = Keyboard.PreviewKeyDownEvent });
+            await Task.Delay(100);
+            Assert.Equal(siblingPath, browser.DirectoryPath);
+            Assert.False(model.IsViewing);
+            ((Button)window.FindName("UpButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await Task.Delay(100);
+            Assert.Equal(directory, browser.DirectoryPath);
+            Assert.Equal(siblingPath, ((FileItem)list.SelectedItem).Path);
+            Capture((FrameworkElement)window.Content, Path.Combine(screenshotRoot, "browser-folders.png"));
+            ((Button)window.FindName("BackButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await Task.Delay(100);
+            Assert.Equal(siblingPath, browser.DirectoryPath);
+            ((Button)window.FindName("ForwardButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            await Task.Delay(100);
+            Assert.Equal(directory, browser.DirectoryPath);
+
+            foreach (var permanent in new[] { false, true })
+            {
+                var defaultCancel = false;
+                double iconWidth = 0;
+                _ = Dispatcher.CurrentDispatcher.InvokeAsync(() =>
+                {
+                    var dialog = window.OwnedWindows.Cast<Window>().Single();
+                    var content = (DockPanel)((Border)dialog.Content).Child;
+                    var cancel = content.Children.OfType<StackPanel>().Single().Children.OfType<Button>().First();
+                    defaultCancel = cancel.IsCancel && cancel.IsDefault;
+                    iconWidth = content.Children.OfType<Grid>().Single().Width;
+                    Capture(dialog, Path.Combine(screenshotRoot, permanent ? "delete-permanent.png" : "delete-recycle.png"));
+                    dialog.DialogResult = false;
+                }, DispatcherPriority.Loaded);
+                Assert.False(DeleteConfirmation.Show(window, 1, "example.jpg", permanent));
+                Assert.True(defaultCancel);
+                Assert.Equal(permanent ? 64 : 46, iconWidth);
+            }
 
             await model.ShowImageAsync(path);
+            window.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(window)!, 0, Key.I) { RoutedEvent = Keyboard.PreviewKeyDownEvent });
+            await Task.Delay(100);
+            var metadataPanel = (FrameworkElement)window.FindName("MetadataPanel");
+            Assert.True(metadataPanel.IsVisible);
+            Assert.NotEmpty(((DataGrid)window.FindName("MetadataTable")).Items);
+            Capture((FrameworkElement)window.Content, Path.Combine(screenshotRoot, "metadata.png"));
+            var infoPin = (CheckBox)window.FindName("InfoPin");
+            infoPin.IsChecked = true;
+            infoPin.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.True(settings.MetadataPinned);
+            window.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(window)!, 0, Key.I) { RoutedEvent = Keyboard.PreviewKeyDownEvent });
+            Assert.False(metadataPanel.IsVisible);
             Assert.Equal(EscapeAction.ShowBrowser, model.Escape);
             window.UpdateLayout();
             Capture((FrameworkElement)window.Content, Path.Combine(screenshotRoot, "viewer-windowed.png"));

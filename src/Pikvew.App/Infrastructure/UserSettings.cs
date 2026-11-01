@@ -18,6 +18,7 @@ public sealed class UserSettings
     public bool SupportedOnly { get; set; } = true;
     public bool Fullscreen { get; set; }
     public bool EnlargeSmallImages { get; set; }
+    public bool MetadataPinned { get; set; }
     public bool Maximized { get; set; }
     public double Left { get; set; } = double.NaN;
     public double Top { get; set; } = double.NaN;

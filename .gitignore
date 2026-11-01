@@ -7,3 +7,5 @@
 artifacts/
 TestResults/
 *.binlog
+__pycache__/
+*.pyc

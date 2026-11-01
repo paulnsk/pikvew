@@ -24,7 +24,9 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public EscapeAction Escape => _session.Escape;
     public string CurrentPath { get => _currentPath; private set { if (Set(ref _currentPath, value)) { Raise(nameof(Title)); Raise(nameof(FileName)); } } }
     public string FileName => Path.GetFileName(CurrentPath);
-    public string Title => string.IsNullOrEmpty(CurrentPath) ? "Pikvew" : $"{FileName} — Pikvew";
+    private static readonly string ApplicationTitle = "Pikvew " + typeof(MainViewModel).Assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+        .Cast<System.Reflection.AssemblyInformationalVersionAttribute>().First().InformationalVersion;
+    public string Title => string.IsNullOrEmpty(CurrentPath) ? ApplicationTitle : $"{FileName} — {ApplicationTitle}";
     public string Message { get => _message; private set => Set(ref _message, value); }
     public bool IsLoading { get => _loading; private set => Set(ref _loading, value); }
     public string Dimensions => Playback.Document is { } document ? $"{document.Width} × {document.Height}" : "";

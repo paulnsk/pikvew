@@ -73,8 +73,16 @@ public sealed class BrowserViewModel(ImageLoader loader, ThumbnailCache thumbnai
             if (part == ".") continue;
             await node.LoadAsync();
             if (!string.Equals(target, DirectoryPath, StringComparison.OrdinalIgnoreCase)) return;
+            var child = node.Children.FirstOrDefault(candidate => string.Equals(candidate.Name, part, StringComparison.OrdinalIgnoreCase));
+            if (child is null)
+            {
+                // A background empty-folder probe may predate an externally created folder.
+                await node.LoadAsync(refresh: true);
+                if (!string.Equals(target, DirectoryPath, StringComparison.OrdinalIgnoreCase)) return;
+                child = node.Children.FirstOrDefault(candidate => string.Equals(candidate.Name, part, StringComparison.OrdinalIgnoreCase));
+            }
             node.IsExpanded = true;
-            node = node.Children.FirstOrDefault(child => string.Equals(child.Name, part, StringComparison.OrdinalIgnoreCase));
+            node = child;
             if (node is null) return;
         }
         if (!string.Equals(target, DirectoryPath, StringComparison.OrdinalIgnoreCase)) return;
@@ -119,10 +127,10 @@ public sealed class BrowserViewModel(ImageLoader loader, ThumbnailCache thumbnai
         {
             var metadata = await catalog.ListAsync(directory, token);
             token.ThrowIfCancellationRequested();
-            var files = metadata.Select(file => new FileItem(file.Path, file.Modified, file.Length, loader.IsSupported(file.Path), thumbnails)).ToArray();
+            var files = metadata.Select(file => new FileItem(file.Path, file.Modified, file.Length, !file.IsDirectory && loader.IsSupported(file.Path), thumbnails, file.IsDirectory)).ToArray();
             var changed = _allFiles.Count != files.Length || !_allFiles.OrderBy(f => f.Path, StringComparer.OrdinalIgnoreCase)
                 .Zip(files.OrderBy(f => f.Path, StringComparer.OrdinalIgnoreCase))
-                .All(pair => pair.First.Path == pair.Second.Path && pair.First.Modified == pair.Second.Modified && pair.First.Length == pair.Second.Length);
+                .All(pair => pair.First.Path == pair.Second.Path && pair.First.Modified == pair.Second.Modified && pair.First.Length == pair.Second.Length && pair.First.IsDirectory == pair.Second.IsDirectory);
             if (changed || !refresh) { _allFiles = files; ApplyFilter(); }
             Status = "";
         }
@@ -140,13 +148,13 @@ public sealed class BrowserViewModel(ImageLoader loader, ThumbnailCache thumbnai
 
     private void ApplyFilter()
     {
-        IEnumerable<FileItem> files = SupportedOnly ? _allFiles.Where(f => f.Supported) : _allFiles;
+        IEnumerable<FileItem> files = SupportedOnly ? _allFiles.Where(f => f.Supported || f.IsDirectory) : _allFiles;
         Files = (Sort switch
         {
             "Name" => files.OrderBy(f => f.Name, StringComparer.OrdinalIgnoreCase),
             "Date modified" => files.OrderBy(f => f.Modified).ThenBy(f => f.Name, NaturalNameComparer.Instance),
             _ => files.OrderBy(f => f.Name, NaturalNameComparer.Instance)
-        }).ToArray();
+        }).OrderByDescending(f => f.IsDirectory).ToArray();
     }
 
     public void Cancel() => _scan?.Cancel();

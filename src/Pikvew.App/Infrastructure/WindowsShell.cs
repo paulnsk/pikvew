@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media.Imaging;
 using Microsoft.VisualBasic.FileIO;
+using Microsoft.Win32;
 
 namespace Pikvew.App.Infrastructure;
 
@@ -14,6 +15,57 @@ public static class WindowsShell
     private static readonly SemaphoreSlim IconSlots = new(2, 2);
     private static readonly Dictionary<string, (DateTime Expires, Task<BitmapSource?> Result)> Icons = new(StringComparer.OrdinalIgnoreCase);
     public static bool IsOpenWithActive { get; private set; }
+    private static readonly Lazy<Task<BitmapSource>> FolderIcon = new(() => Task.Run(LoadFolderIcon));
+    public static Task<BitmapSource> GetFolderIconAsync() => FolderIcon.Value;
+
+    private static BitmapSource LoadFolderIcon()
+    {
+        var initialized = CoInitializeEx(0, 0) >= 0;
+        nint bitmap = 0;
+        IShellItemImageFactory? factory = null;
+        try
+        {
+            var id = typeof(IShellItemImageFactory).GUID;
+            Marshal.ThrowExceptionForHR(SHCreateItemFromParsingName(Environment.GetFolderPath(Environment.SpecialFolder.Windows), 0, ref id, out factory));
+            Marshal.ThrowExceptionForHR(factory.GetImage(new NativeSize { Width = 256, Height = 256 }, 0x4 | 0x1, out bitmap)); // ICONONLY | BIGGERSIZEOK
+            var source = System.Windows.Interop.Imaging.CreateBitmapSourceFromHBitmap(bitmap, 0, Int32Rect.Empty, BitmapSizeOptions.FromEmptyOptions());
+            source.Freeze();
+            return source;
+        }
+        finally
+        {
+            if (bitmap != 0) _ = DeleteObject(bitmap);
+            if (factory is not null) _ = Marshal.ReleaseComObject(factory);
+            if (initialized) CoUninitialize();
+        }
+    }
+
+    public static bool CanRecycle(string path)
+    {
+        if (path.StartsWith(@"\\", StringComparison.Ordinal)) return false;
+        try
+        {
+            var root = Path.GetPathRoot(path)!;
+            var drive = new DriveInfo(root);
+            if (drive.DriveType == DriveType.Network) return false;
+            var volume = new StringBuilder(64);
+            if (GetVolumeNameForVolumeMountPoint(root, volume, volume.Capacity))
+            {
+                var text = volume.ToString();
+                var start = text.IndexOf('{');
+                var end = text.IndexOf('}');
+                if (start >= 0 && end > start)
+                {
+                    using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Explorer\BitBucket\Volume\" + text[start..(end + 1)]);
+                    if (key?.GetValue("NukeOnDelete") is int value && value != 0) return false;
+                }
+            }
+            if (drive.DriveType == DriveType.Fixed) return true;
+            var info = new RecycleInfo { Size = (uint)Marshal.SizeOf<RecycleInfo>() };
+            return SHQueryRecycleBin(root, ref info) == 0;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException) { return false; }
+    }
 
     public static void OpenWith(Window owner, string path)
     {
@@ -142,4 +194,23 @@ public static class WindowsShell
     private static extern int CoInitializeEx(nint reserved, uint flags);
     [DllImport("ole32.dll")]
     private static extern void CoUninitialize();
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeSize { public int Width, Height; }
+    [ComImport, Guid("bcc18b79-ba16-442f-80c4-8a59c30c463b"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IShellItemImageFactory
+    {
+        [PreserveSig] int GetImage(NativeSize size, uint flags, out nint bitmap);
+    }
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern int SHCreateItemFromParsingName(string path, nint bindContext, ref Guid id, out IShellItemImageFactory factory);
+    [DllImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool DeleteObject(nint value);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetVolumeNameForVolumeMountPoint(string root, StringBuilder name, int length);
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RecycleInfo { public uint Size; public long Bytes, Count; }
+    [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+    private static extern int SHQueryRecycleBin(string root, ref RecycleInfo info);
 }
