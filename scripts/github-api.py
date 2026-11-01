@@ -1,5 +1,6 @@
 """GitHub release transport using Git Credential Manager; credentials stay in memory."""
 import argparse
+import base64
 import hashlib
 import http.client
 import json
@@ -21,7 +22,10 @@ git_root = git.resolve().parent.parent
 manager = git_root / 'mingw64/bin/git-credential-manager.exe'
 environment = os.environ.copy()
 environment['GCM_INTERACTIVE'] = 'never'
-environment.update({'GIT_TRACE': '0', 'GIT_TRACE_CURL': '0', 'GIT_CURL_VERBOSE': '0', 'GIT_TRACE_REDACT': '1', 'GCM_TRACE': '0', 'GCM_TRACE_SECRETS': '0'})
+for key in list(environment):
+    if key.startswith('GIT_TRACE') or key in {'GIT_CURL_VERBOSE', 'GCM_TRACE', 'GCM_TRACE_SECRETS'}:
+        environment.pop(key)
+environment['GIT_TRACE_REDACT'] = '1'
 credential = subprocess.run([str(manager), 'get'], input='protocol=https\nhost=github.com\nusername=paulnsk\n\n',
                             text=True, capture_output=True, env=environment, check=True)
 values = dict(line.split('=', 1) for line in credential.stdout.splitlines() if '=' in line)
@@ -53,8 +57,9 @@ if args.action == 'preflight':
 elif args.action == 'push':
     environment.update({key: '' for key in ['HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'GIT_HTTP_PROXY', 'GIT_HTTPS_PROXY']})
     count = int(environment.get('GIT_CONFIG_COUNT', '0'))
+    basic = base64.b64encode((values.get('username', 'paulnsk') + ':' + token).encode()).decode()
     environment.update({'GIT_CONFIG_COUNT': str(count + 1), f'GIT_CONFIG_KEY_{count}': 'http.https://github.com/.extraheader',
-                        f'GIT_CONFIG_VALUE_{count}': 'Authorization: Bearer ' + token})
+                        f'GIT_CONFIG_VALUE_{count}': 'Authorization: Basic ' + basic})
     subprocess.run([str(git), 'push', 'origin', 'main'], env=environment, check=True)
 else:
     if not all([args.version, args.commit, args.executable]):
