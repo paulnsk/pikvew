@@ -4,6 +4,26 @@
 
 ## Текущее состояние
 
+- **Седьмой проход завершён, GitHub release 0.1.1 опубликован и проверен.**
+  https://github.com/paulnsk/pikvew/releases/tag/v0.1.1
+  EXE: https://github.com/paulnsk/pikvew/releases/download/v0.1.1/Pikvew.exe
+  GitHub draft=false, asset state=uploaded, 79666509 bytes; remote SHA256 совпал
+  с локальным 4687dc096b5786f7fc3f338145dcf4d823f5b5c0688efb2a331729bb22c2b5a6.
+  Tag commit d3a70c53b00132d229e0c26c0a768d0200977c0c; title/body ровно Pikvew 0.1.1.
+  Все одобренные функции реализованы, 60 tests passed /4 OS integration skipped;
+  проверить реальные мониторы/DPI/UNC и реальные удаления пользователю вне sandbox.
+  В этом выпуске C:\tools не обновляли: release script собирает/публикует artifact;
+  локальное копирование C:\tools сохранено в publish.bat / scripts/publish.ps1.
+
+- Release candidate **0.1.1** опубликован локально: artifacts/release/win-x64/Pikvew.exe
+  79666509 bytes, SHA256 4687dc096b5786f7fc3f338145dcf4d823f5b5c0688efb2a331729bb22c2b5a6.
+  Final bundle audit: 261 entries, 259 compressed, unwanted=[]; artifacts/release-bundle.json.
+  Feature commit774b7e6, version release commit3aec2d9, transport fix d3a70c5 pushed main.
+  Git HTTPS требует Basic token, REST Bearer; helper поправлен, credentials не раскрыты.
+- GitHub release ID **430439481**, tag v0.1.1, title/body Pikvew 0.1.1, target
+  commit d3a70c5. Upload+digest verification+publish завершились успешно.
+  Повторный release.ps1 намеренно создаст следующий minor, 0.2.x.
+
 - Финальные проверки седьмого прохода: **60 passed, 4 skipped, 0 failed / 64**.
   Skips — 3 registry cases + pipe integration, включаются в test.bat вне sandbox.
   UI smoke проверил enter папки, Up select departed folder, Back/Forward, native

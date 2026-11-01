@@ -79,4 +79,5 @@ else:
     if asset.get('digest') and asset['digest'] != digest:
         raise RuntimeError('Uploaded asset checksum differs from the published executable')
     published = request('PATCH', api + '/releases/' + str(release['id']), b'{"draft":false}', {'Content-Type': 'application/json'})
-    print(json.dumps({'url': published['html_url'], 'version': args.version, 'asset': asset['browser_download_url'], 'bytes': size, 'digest': digest}))
+    published_asset = next(item for item in published['assets'] if item['id'] == asset['id'])
+    print(json.dumps({'url': published['html_url'], 'version': args.version, 'asset': published_asset['browser_download_url'], 'bytes': size, 'digest': digest}))
