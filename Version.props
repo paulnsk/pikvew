@@ -1,8 +1,8 @@
 <Project>
   <PropertyGroup>
     <VersionMajor>0</VersionMajor>
-    <VersionMinor>0</VersionMinor>
+    <VersionMinor>1</VersionMinor>
     <MinorVersionMajor>0</MinorVersionMajor>
-    <BuildFloor>0</BuildFloor>
+    <BuildFloor>1</BuildFloor>
   </PropertyGroup>
 </Project>
