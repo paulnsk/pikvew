@@ -4,13 +4,23 @@
 
 ## Текущее состояние
 
+- **Пакет 0.2.1 завершён и опубликован.**
+  https://github.com/paulnsk/pikvew/releases/tag/v0.2.1
+  EXE: https://github.com/paulnsk/pikvew/releases/download/v0.2.1/Pikvew.exe
+  Проверено GitHub API: draft=false, asset uploaded, 79681215 bytes,
+  SHA25661a1d92f0a149ed16c71513b7bf8e388774f85068ec11876fa162ae8e3d735df совпал.
+  Tag commit21886f633921f936f9b39ae9271b8d122ccd7bb4; title/body ровно Pikvew 0.2.1.
+  Все одобренные пункты реализованы. Осталась пользовательская проверка поведения
+  на реальных UNC/мониторах; дополнительных блокирующих вопросов нет.
+  C:\tools не обновляли (release -NoToolsCopy); publish.bat сохраняет эту возможность.
+
 - Release candidate 0.2.1 собран: artifacts/release/win-x64/Pikvew.exe, 79681215 bytes.
   Bundle audit: 261 entries, 259 compressed, unwanted=[] (нет PDB/XML/source/log/TRX).
   Первый release.ps1 остановился на NU1900 (NuGet vulnerability endpoint недоступен),
   до build/upload. Повторно release.ps1 НЕ запускали, minor остался2; resume publish.ps1
   с WarningsNotAsErrors=NU1900 только для этого процесса, остальные warnings-as-errors
   сохранены. Зависимости без изменений, использован локальный package cache; свежая
-  проверка уязвимостей недоступна. BuildFloor1, далее commit/push/upload candidate0.2.1.
+  проверка уязвимостей недоступна. BuildFloor1, release commit21886f6 pushed/published.
 
 - Финальный прогон пакета 0.2.x: 71 passed /4 Windows integration skipped, 75 total,
   artifacts/test-results/release-02.trx. Включает actual private JPEG decode/thumbnail,
@@ -19,7 +29,7 @@
   UI fixture после Restore() повторно уводит окно за экран, чтобы реальный курсор
   не менял hover routing; async navigation ожидается до конца, без100ms предположения.
   F2 ищет уже материализованный visual container и не перераскрывает текущее дерево.
-  GitHub preflight успешен, далее commit + release.ps1 (minor2, build1).
+  GitHub preflight успешен; релиз minor2/build1 опубликован (см. выше).
 
 - Пакет 0.2.x реализован, идёт финальная проверка перед релизом. Rider solution Pikvew
   подтверждён. Его PSI отдельных файлов устарел: ImageLoader diagnostics ссылается на
