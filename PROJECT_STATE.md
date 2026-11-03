@@ -4,6 +4,14 @@
 
 ## Текущее состояние
 
+- Release candidate 0.2.1 собран: artifacts/release/win-x64/Pikvew.exe, 79681215 bytes.
+  Bundle audit: 261 entries, 259 compressed, unwanted=[] (нет PDB/XML/source/log/TRX).
+  Первый release.ps1 остановился на NU1900 (NuGet vulnerability endpoint недоступен),
+  до build/upload. Повторно release.ps1 НЕ запускали, minor остался2; resume publish.ps1
+  с WarningsNotAsErrors=NU1900 только для этого процесса, остальные warnings-as-errors
+  сохранены. Зависимости без изменений, использован локальный package cache; свежая
+  проверка уязвимостей недоступна. BuildFloor1, далее commit/push/upload candidate0.2.1.
+
 - Финальный прогон пакета 0.2.x: 71 passed /4 Windows integration skipped, 75 total,
   artifacts/test-results/release-02.trx. Включает actual private JPEG decode/thumbnail,
   Ctrl-tree без H/V flicker, F2 file+current-directory, selection/history после rename,
