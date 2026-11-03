@@ -8,6 +8,15 @@ public sealed class BrowserHistory
     private int _index = -1;
     public bool CanBack => _index > 0;
     public bool CanForward => _index >= 0 && _index < _entries.Count - 1;
+    public void Rename(string oldPath, string newPath, bool directory)
+    {
+        for (var index = 0; index < _entries.Count; index++)
+        {
+            var entry = _entries[index];
+            _entries[index] = new BrowserLocation(PathRename.Remap(entry.Path, oldPath, newPath, directory),
+                entry.Selection.Select(path => PathRename.Remap(path, oldPath, newPath, directory)).ToArray(), entry.Offset);
+        }
+    }
     public void Visit(BrowserLocation current, string destination)
     {
         if (_index < 0 && current.Path.Length > 0) { _entries.Add(current); _index = 0; }

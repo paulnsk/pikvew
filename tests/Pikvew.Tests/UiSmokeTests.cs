@@ -94,6 +94,10 @@ public sealed class UiSmokeTests
             for (var i = 2; i <= 80; i++) File.Copy(path, Path.Combine(directory, $"{i}.gif"));
             window.Show();
             await window.InitializeAsync([path]);
+            // Restore() runs on SourceInitialized and replaces the initializer's position.
+            // Keep the test away from the real pointer so hover routing is deterministic.
+            window.Left = -20000;
+            window.Top = -20000;
             Assert.True(model.IsViewing);
             Assert.True(playback.IsAnimated);
             Assert.Equal(EscapeAction.CloseApplication, model.Escape);
@@ -146,6 +150,22 @@ public sealed class UiSmokeTests
             var siblingPath = Path.Combine(directory, "folder498");
             var sibling = FindTreeItem(tree, siblingPath);
             Assert.NotNull(sibling);
+            var treeScroll = FindVisual<ScrollViewer>(tree)!;
+            treeScroll.ScrollToHorizontalOffset(60);
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            var horizontal = treeScroll.HorizontalOffset;
+            var vertical = treeScroll.VerticalOffset;
+            var moves = new List<double>();
+            ScrollChangedEventHandler track = (_, change) => { if (change.HorizontalChange != 0) moves.Add(change.HorizontalChange); };
+            treeScroll.ScrollChanged += track;
+            var navigateTree = typeof(MainWindow).GetMethod("NavigateTreeAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+            await (Task)navigateTree.Invoke(window, [TreeDirection.Up])!;
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            Assert.Equal(siblingPath, browser.DirectoryPath);
+            Assert.Equal(horizontal, treeScroll.HorizontalOffset, 2);
+            Assert.Equal(vertical, treeScroll.VerticalOffset, 2);
+            Assert.Empty(moves);
+            treeScroll.ScrollChanged -= track;
             sibling.IsSelected = true;
             sibling.Focus();
             await Task.Delay(150);
@@ -156,39 +176,85 @@ public sealed class UiSmokeTests
             await window.OpenArgumentsAsync([directory]);
             Assert.Equal(80, browser.Files.Count(f => !f.IsDirectory));
             Assert.True((await WindowsShell.GetFolderIconAsync()).PixelWidth >= 128);
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            list.SelectedItems.Clear();
             list.SelectedItem = browser.Files.First(f => f.Path == siblingPath);
             window.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(window)!, 0, Key.Enter) { RoutedEvent = Keyboard.PreviewKeyDownEvent });
             await Task.Delay(100);
             Assert.Equal(siblingPath, browser.DirectoryPath);
             Assert.False(model.IsViewing);
-            ((Button)window.FindName("UpButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            await Task.Delay(100);
+            await (Task)typeof(MainWindow).GetMethod("GoUpAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, null)!;
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             Assert.Equal(directory, browser.DirectoryPath);
+
             Assert.Equal(siblingPath, ((FileItem)list.SelectedItem).Path);
             Capture((FrameworkElement)window.Content, Path.Combine(screenshotRoot, "browser-folders.png"));
-            ((Button)window.FindName("BackButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            await Task.Delay(100);
+            await (Task)typeof(MainWindow).GetMethod("GoHistoryAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, [-1])!;
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             Assert.Equal(siblingPath, browser.DirectoryPath);
-            ((Button)window.FindName("ForwardButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-            await Task.Delay(100);
+            await (Task)typeof(MainWindow).GetMethod("GoHistoryAsync", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(window, [1])!;
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             Assert.Equal(directory, browser.DirectoryPath);
+
+            // F2 edits just the filename stem in place and preserves selection after refresh.
+            var originalFile = browser.Files.First(file => file.Path == path);
+            list.SelectedItems.Clear();
+            list.SelectedItem = originalFile;
+            list.ScrollIntoView(originalFile);
+            list.UpdateLayout();
+            list.Focus();
+            window.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(window)!, 0, Key.F2) { RoutedEvent = Keyboard.PreviewKeyDownEvent });
+            var fileLabel = FindVisual<RenameLabel>((DependencyObject)list.ItemContainerGenerator.ContainerFromItem(originalFile)!)!;
+            Assert.True(fileLabel.IsEditing);
+            var editor = fileLabel.Children.OfType<TextBox>().Single();
+            Assert.Equal("1", editor.SelectedText);
+            editor.Text = "renamed.gif";
+            await fileLabel.CommitAsync();
+            Assert.True(File.Exists(Path.Combine(directory, "renamed.gif")));
+            Assert.Equal(Path.Combine(directory, "renamed.gif"), ((FileItem)list.SelectedItem).Path);
+            list.UpdateLayout();
+            var renamedFileLabel = FindVisual<RenameLabel>((DependencyObject)list.ItemContainerGenerator.ContainerFromItem(list.SelectedItem)!)!;
+            renamedFileLabel.BeginEdit();
+            renamedFileLabel.Children.OfType<TextBox>().Single().Text = "1.gif";
+            await renamedFileLabel.CommitAsync();
+            Assert.True(File.Exists(path));
+
+            // Renaming the currently opened directory in the tree remaps the browser path.
+            await window.OpenArgumentsAsync([siblingPath]);
+            var directoryNode = (DirectoryNode)tree.SelectedItem;
+            var directoryItem = FindTreeItem(tree, directoryNode.Path)!;
+            Assert.True(directoryItem.Focus(), $"Cannot focus tree item: {Keyboard.FocusedElement}");
+            window.RaiseEvent(new KeyEventArgs(Keyboard.PrimaryDevice, PresentationSource.FromVisual(window)!, 0, Key.F2) { RoutedEvent = Keyboard.PreviewKeyDownEvent });
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            var directoryLabel = FindVisual<RenameLabel>(FindTreeItem(tree, directoryNode.Path)!)!;
+            Assert.True(directoryLabel.IsEditing, $"Focus={Keyboard.FocusedElement}, tree focus={tree.IsKeyboardFocusWithin}, tree hover={tree.IsMouseOver}, files hover={list.IsMouseOver}, browser={browser.DirectoryPath}, viewing={model.IsViewing}");
+            directoryLabel.Children.OfType<TextBox>().Single().Text = "renamed-folder";
+            await directoryLabel.CommitAsync();
+            Assert.Equal(Path.Combine(directory, "renamed-folder"), browser.DirectoryPath);
+            Assert.True(Directory.Exists(browser.DirectoryPath));
+            directoryLabel = FindVisual<RenameLabel>(FindTreeItem(tree, browser.DirectoryPath)!)!;
+            directoryLabel.BeginEdit();
+            directoryLabel.Children.OfType<TextBox>().Single().Text = "folder498";
+            await directoryLabel.CommitAsync();
+            Assert.Equal(siblingPath, browser.DirectoryPath);
+            await window.OpenArgumentsAsync([directory]);
 
             foreach (var permanent in new[] { false, true })
             {
-                var defaultCancel = false;
+                var defaultConfirm = false;
                 double iconWidth = 0;
                 _ = Dispatcher.CurrentDispatcher.InvokeAsync(() =>
                 {
                     var dialog = window.OwnedWindows.Cast<Window>().Single();
                     var content = (DockPanel)((Border)dialog.Content).Child;
-                    var cancel = content.Children.OfType<StackPanel>().Single().Children.OfType<Button>().First();
-                    defaultCancel = cancel.IsCancel && cancel.IsDefault;
+                    var buttons = content.Children.OfType<StackPanel>().Single().Children.OfType<Button>().ToArray();
+                    defaultConfirm = buttons[0].IsDefault && !buttons[0].IsCancel && buttons[1].IsCancel && !buttons[1].IsDefault;
                     iconWidth = content.Children.OfType<Grid>().Single().Width;
                     Capture(dialog, Path.Combine(screenshotRoot, permanent ? "delete-permanent.png" : "delete-recycle.png"));
                     dialog.DialogResult = false;
                 }, DispatcherPriority.Loaded);
                 Assert.False(DeleteConfirmation.Show(window, 1, "example.jpg", permanent));
-                Assert.True(defaultCancel);
+                Assert.True(defaultConfirm);
                 Assert.Equal(permanent ? 64 : 46, iconWidth);
             }
 
@@ -269,6 +335,7 @@ public sealed class UiSmokeTests
 
     private static void Capture(FrameworkElement element, string path)
     {
+        if (Environment.GetEnvironmentVariable("PIKVEW_UI_SCREENSHOTS") != "1") return;
         element.UpdateLayout();
         var bitmap = new RenderTargetBitmap(Math.Max(1, (int)element.ActualWidth), Math.Max(1, (int)element.ActualHeight), 96, 96, PixelFormats.Pbgra32);
         bitmap.Render(element);

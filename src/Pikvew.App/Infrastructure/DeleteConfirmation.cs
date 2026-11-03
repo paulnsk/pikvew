@@ -19,11 +19,11 @@ public static class DeleteConfirmation
         };
         var root = new DockPanel { Margin = new Thickness(24) };
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(0, 24, 0, 0) };
-        var cancel = new Button { Content = "Cancel", IsCancel = true, IsDefault = true, ToolTip = "Cancel (Esc / Enter)", Margin = new Thickness(0, 0, 10, 0) };
-        var confirm = new Button { Content = permanent ? "Delete permanently" : "Move to Recycle Bin" };
+        var cancel = new Button { Content = "Cancel", IsCancel = true, ToolTip = "Cancel (Esc)" };
+        var confirm = new Button { Content = permanent ? "Delete permanently" : "Move to Recycle Bin", IsDefault = true, ToolTip = "Confirm (Enter)", Margin = new Thickness(0, 0, 10, 0) };
         confirm.Click += (_, _) => dialog.DialogResult = true;
-        buttons.Children.Add(cancel);
         buttons.Children.Add(confirm);
+        buttons.Children.Add(cancel);
         DockPanel.SetDock(buttons, Dock.Bottom);
         root.Children.Add(buttons);
         var icon = new Grid { Width = permanent ? 64 : 46, Height = permanent ? 64 : 46, Margin = new Thickness(0, 0, 18, 0), VerticalAlignment = VerticalAlignment.Top };
@@ -52,7 +52,7 @@ public static class DeleteConfirmation
         frame.SetResourceReference(Border.BackgroundProperty, "SurfaceBrush");
         dialog.SetResourceReference(Control.ForegroundProperty, "ForegroundBrush");
         dialog.Content = frame;
-        dialog.Loaded += (_, _) => cancel.Focus();
+        dialog.Loaded += (_, _) => confirm.Focus();
         return dialog.ShowDialog() == true;
     }
 }

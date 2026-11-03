@@ -9,6 +9,24 @@ namespace Pikvew.Tests;
 public sealed class ImagingTests : IDisposable
 {
     [Fact]
+    public async Task JpegWithStrayMetadataAfterSoiDecodesForViewerThumbnailAndMetadata()
+    {
+        var path = Path.Combine(_directory, "stray.jpg");
+        using (var image = new MagickImage(MagickColors.Red, 64, 48)) image.Write(path);
+        var original = await File.ReadAllBytesAsync(path);
+        await File.WriteAllBytesAsync(path, original[..2].Concat(" end='w'?>"u8.ToArray()).Concat(original[2..]).ToArray());
+        await using (var document = await _loader.LoadAsync(path, CancellationToken.None)) Assert.Equal(64, document.Width);
+        Assert.Equal(64, (await _loader.ThumbnailAsync(path, CancellationToken.None)).PixelWidth);
+        Assert.Contains(await new MetadataReader().ReadAsync(path, CancellationToken.None), r => r.Name == "Dimensions" && r.Value == "64 × 48");
+        // Optional local regression: decode only; never display, capture, copy or modify it.
+        if (Environment.GetEnvironmentVariable("PIKVEW_PRIVATE_IMAGE") is { Length: > 0 } privatePath)
+        {
+            await using var document = await _loader.LoadAsync(privatePath, CancellationToken.None);
+            Assert.True(document.Width > 0 && document.Height > 0);
+            Assert.True((await _loader.ThumbnailAsync(privatePath, CancellationToken.None)).PixelWidth > 0);
+        }
+    }
+    [Fact]
     public async Task MetadataReadsExifAndReleasesTheOriginalFile()
     {
         var path = Path.Combine(_directory, "metadata.jpg");

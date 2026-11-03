@@ -140,7 +140,7 @@ public partial class MainWindow
 
     private void OnBrowserChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(BrowserViewModel.DirectoryPath)) UpdateNavigationButtons();
+        if (e.PropertyName == nameof(BrowserViewModel.DirectoryPath)) { _fileSearch.Clear(); UpdateNavigationButtons(); }
         if (e.PropertyName == nameof(BrowserViewModel.Files))
             Dispatcher.InvokeAsync(RestoreBrowserSelection, DispatcherPriority.Loaded);
     }
@@ -255,7 +255,7 @@ public partial class MainWindow
 
     private async void OnKeyDown(object sender, KeyEventArgs e)
     {
-        if (_closing) return;
+        if (_closing || Keyboard.FocusedElement is TextBoxBase) return;
         var ctrl = (Keyboard.Modifiers & ModifierKeys.Control) != 0;
         if (e.Key == Key.Escape)
         {
@@ -263,7 +263,7 @@ public partial class MainWindow
             if (_model.Escape == EscapeAction.ShowBrowser) ShowBrowser(); else Close();
             return;
         }
-        if (Keyboard.FocusedElement is TextBoxBase || Keyboard.FocusedElement is ComboBox) return;
+        if (Keyboard.FocusedElement is ComboBox combo && (_model.IsViewing || combo.IsDropDownOpen || (!FolderTree.IsMouseOver && !Files.IsMouseOver))) return;
         var key = e.Key == Key.System ? e.SystemKey : e.Key;
         if (!_model.IsViewing && (Keyboard.Modifiers & ModifierKeys.Alt) != 0 && key is Key.Up or Key.Left or Key.Right)
         {
@@ -273,17 +273,28 @@ public partial class MainWindow
         }
         if (_model.IsViewing && e.Key == Key.I && Keyboard.Modifiers == ModifierKeys.None) { e.Handled = true; OnInfo(this, e); return; }
         if (MetadataPanel.IsKeyboardFocusWithin) return;
-        if (!_model.IsViewing && ctrl && e.Key is Key.Left or Key.Right or Key.Up or Key.Down)
+        if (!_model.IsViewing && e.Key == Key.F2) { e.Handled = true; await RunAsync(BeginRenameAsync); return; }
+        if (!_model.IsViewing && e.Key == Key.Back)
         {
             e.Handled = true;
-            var direction = e.Key switch { Key.Left => TreeDirection.Left, Key.Right => TreeDirection.Right, Key.Up => TreeDirection.Up, _ => TreeDirection.Down };
-            await RunAsync(() => NavigateTreeAsync(direction));
+            var pane = InputPane;
+            var search = pane == BrowserPane.Tree ? _treeSearch : _fileSearch;
+            await RunAsync(() => SearchBrowserAsync(pane, search.Backspace(DateTimeOffset.UtcNow)));
             return;
         }
-        if (!_model.IsViewing && FolderTree.IsKeyboardFocusWithin) return;
+        if (!_model.IsViewing && e.Key is Key.Left or Key.Right or Key.Up or Key.Down)
+        {
+            _treeSearch.Clear(); _fileSearch.Clear();
+            e.Handled = true;
+            var direction = e.Key switch { Key.Left => TreeDirection.Left, Key.Right => TreeDirection.Right, Key.Up => TreeDirection.Up, _ => TreeDirection.Down };
+            if (ctrl || InputPane == BrowserPane.Tree) await RunAsync(() => NavigateTreeAsync(direction));
+            else NavigateFiles(e.Key);
+            return;
+        }
         if (e.Key == Key.Enter)
         {
             e.Handled = true;
+            if (e.IsRepeat) return;
             if (ctrl) ToggleFullscreen();
             else if (_model.IsViewing && _model.Playback.Document is null && !_model.IsLoading && !string.IsNullOrEmpty(_model.CurrentPath))
                 await RunAsync(() => WindowsShell.OpenAsync(_model.CurrentPath));
@@ -347,7 +358,8 @@ public partial class MainWindow
     }
     private async void OnFilesDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        if (FindParent<Button>(e.OriginalSource as DependencyObject) is not null) return;
+        if (FindParent<Button>(e.OriginalSource as DependencyObject) is not null
+            || FindParent<TextBoxBase>(e.OriginalSource as DependencyObject) is not null) return;
         if (e.ChangedButton == MouseButton.Left && FindParent<ListBoxItem>(e.OriginalSource as DependencyObject) is not null)
             await RunAsync(ToggleViewAsync);
     }
@@ -368,8 +380,12 @@ public partial class MainWindow
         if (e.NewValue is DirectoryNode selected) _ = selected.ProbeChildrenAsync(refresh: true);
         if (e.NewValue is DirectoryNode { Path.Length: > 0 } node && !string.Equals(node.Path, _model.Browser.DirectoryPath, StringComparison.OrdinalIgnoreCase))
         {
-            ++_treeNavigationVersion;
-            await RunAsync(() => OpenFolderAsync(node.Path));
+            var version = ++_treeNavigationVersion;
+            await RunAsync(async () =>
+            {
+                await OpenFolderAsync(node.Path);
+                if (version == _treeNavigationVersion) SelectFirstPreviewFile();
+            });
         }
     }
     private void OnTreeItemLoaded(object sender, RoutedEventArgs e)
@@ -470,13 +486,18 @@ public partial class MainWindow
     private async Task NavigateTreeAsync(TreeDirection direction)
     {
         var version = ++_treeNavigationVersion;
-        var next = await DirectoryNavigation.MoveAsync(_model.Browser.Roots, _model.Browser.DirectoryPath, direction);
+        var current = (FolderTree.SelectedItem as DirectoryNode)?.Path ?? _model.Browser.DirectoryPath;
+        var next = await DirectoryNavigation.MoveAsync(_model.Browser.Roots, current, direction);
         if (next is null || version != _treeNavigationVersion || _model.IsViewing) return;
-        if (!string.Equals(next.Path, _model.Browser.DirectoryPath, StringComparison.OrdinalIgnoreCase)) await OpenFolderAsync(next.Path);
-        if (version == _treeNavigationVersion && !_model.IsViewing) await RevealTreeAsync();
+        await SelectTreeAndOpenAsync(next, version);
     }
     private void BringTreeHeaderIntoView(TreeViewItem item)
     {
+        if (FindVisual<ScrollContentPresenter>(FolderTree) is { } viewport && viewport.IsAncestorOf(item))
+        {
+            var top = item.TranslatePoint(new Point(), viewport).Y;
+            if (top >= 0 && top + 26 <= viewport.ActualHeight) return;
+        }
         item.BringIntoView(new Rect(0, 0, 1, 26));
     }
     private void OnBrowserWheel(object sender, MouseWheelEventArgs e)
@@ -579,14 +600,22 @@ public partial class MainWindow
     private void OnCopyFiles(object sender, RoutedEventArgs e) => _ = RunAsync(() => { CopyFiles(); return Task.CompletedTask; });
     private void OnCopyPaths(object sender, RoutedEventArgs e) => _ = RunAsync(() => { Clipboard.SetText(string.Join(Environment.NewLine, SelectedPaths())); return Task.CompletedTask; });
     private async void OnOpenWith(object sender, RoutedEventArgs e)
-    { await RunAsync(() => { if (SelectedPaths().FirstOrDefault() is { } path) WindowsShell.OpenWith(this, path); return Task.CompletedTask; }); }
+    {
+        await RunAsync(() =>
+        {
+            if (SelectedPaths().FirstOrDefault() is { } path && _activationGate.TryActivate("openwith:" + path, DateTimeOffset.UtcNow, InputTiming.DoubleClickTime)) WindowsShell.OpenWith(this, path);
+            return Task.CompletedTask;
+        });
+    }
+    private void OnExternalOpenPress(object sender, MouseButtonEventArgs e) { if (e.ClickCount > 1) e.Handled = true; }
     private async void OnUnsupportedTileOpenWith(object sender, RoutedEventArgs e)
     {
         e.Handled = true;
         if (sender is FrameworkElement { DataContext: FileItem file })
         {
             SelectTile(file);
-            await RunAsync(() => { WindowsShell.OpenWith(this, file.Path); return Task.CompletedTask; });
+            if (_activationGate.TryActivate("openwith:" + file.Path, DateTimeOffset.UtcNow, InputTiming.DoubleClickTime))
+                await RunAsync(() => { WindowsShell.OpenWith(this, file.Path); return Task.CompletedTask; });
         }
     }
     private async void OnOpen(object sender, RoutedEventArgs e)
@@ -594,7 +623,8 @@ public partial class MainWindow
         e.Handled = true;
         var path = sender is FrameworkElement { DataContext: FileItem file } ? file.Path : SelectedPaths().FirstOrDefault();
         if (sender is FrameworkElement { DataContext: FileItem tile }) SelectTile(tile);
-        if (!string.IsNullOrEmpty(path)) await RunAsync(() => WindowsShell.OpenAsync(path));
+        if (!string.IsNullOrEmpty(path) && _activationGate.TryActivate("open:" + path, DateTimeOffset.UtcNow, InputTiming.DoubleClickTime))
+            await RunAsync(() => WindowsShell.OpenAsync(path));
     }
     private async void OnAssociations(object sender, RoutedEventArgs e)
     {

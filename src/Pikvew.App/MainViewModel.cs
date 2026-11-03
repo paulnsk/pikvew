@@ -32,6 +32,13 @@ public sealed class MainViewModel : ObservableObject, IAsyncDisposable
     public string Dimensions => Playback.Document is { } document ? $"{document.Width} × {document.Height}" : "";
     public string Notice => Playback.Document?.Notice ?? "";
 
+    public void RenamePath(string oldPath, string newPath, bool directory)
+    {
+        CurrentPath = PathRename.Remap(CurrentPath, oldPath, newPath, directory);
+        _settings.LastFile = PathRename.Remap(_settings.LastFile, oldPath, newPath, directory);
+        _preloader.KeepOnly([]);
+    }
+
     public MainViewModel(ImageLoader loader, UserSettings settings, BrowserViewModel browser, PlaybackController playback, ImagePreloader preloader)
     {
         _loader = loader;

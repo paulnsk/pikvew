@@ -34,7 +34,10 @@ public sealed class MetadataReader
         if (!Common.Contains(file.Extension.TrimStart('.'))) return rows;
         using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         using var image = new MagickImage();
-        image.Ping(stream, new MagickReadSettings { FrameIndex = 0, FrameCount = 1 });
+        var header = new byte[2];
+        _ = stream.Read(header);
+        stream.Position = 0;
+        image.Ping(stream, ImageLoader.ReadSettings(path, header));
         Add("Format", image.Format.ToString());
         Add("Dimensions", $"{image.Width} × {image.Height}");
         Add("Bit depth", image.Depth.ToString(CultureInfo.InvariantCulture));

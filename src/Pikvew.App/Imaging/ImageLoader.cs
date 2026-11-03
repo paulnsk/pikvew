@@ -15,7 +15,8 @@ public sealed class ImageLoader
          "exr hdr dds xbm xpm xcf mng jng ras sgi rgb rgba bw pict pct pic fits fit fts wbmp").Split(' '),
         StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _decodeSlots = new(2, 2);
-    private readonly SemaphoreSlim _thumbnailSlots = new(2, 2);
+    private readonly ThumbnailPipeline _thumbnails = new();
+    public ThumbnailStatistics ThumbnailStatistics => _thumbnails.Statistics;
     public static IReadOnlyList<string> SupportedExtensions { get; } = Extensions.Select(e => "." + e).Order(StringComparer.Ordinal).ToArray();
 
     public bool IsSupported(string path) => Extensions.Contains(Path.GetExtension(path).TrimStart('.'));
@@ -99,7 +100,7 @@ public sealed class ImageLoader
             pages.Ping(bytes);
             if (pages.Count > 1) notice = "Multi-page TIFF: showing the first page. Use Open with for other pages.";
         }
-        using var image = new MagickImage(bytes, ReadSettings(path));
+        using var image = new MagickImage(bytes, ReadSettings(path, bytes));
         token.ThrowIfCancellationRequested();
         image.AutoOrient();
         NormalizeColor(image);
@@ -138,7 +139,7 @@ public sealed class ImageLoader
         return new ImageDocument(bitmap, preview: preview);
     }
 
-    private static MagickReadSettings ReadSettings(string path)
+    internal static MagickReadSettings ReadSettings(string path, byte[]? bytes = null)
     {
         var settings = new MagickReadSettings { FrameIndex = 0, FrameCount = 1 };
         // Some legacy formats have no reliable magic signature. SVG must never depend
@@ -150,6 +151,10 @@ public sealed class ImageLoader
             ".svg" or ".svgz" => MagickFormat.Rsvg,
             _ => MagickFormat.Unknown
         };
+        // Some internet JPEGs have stray metadata text after SOI. Their JPEG codec
+        // tolerates it, while format auto-detection expects FF D8 FF and rejects it.
+        // Trust SOI, not the filename: a PNG/WebP disguised as .jpg still auto-detects.
+        if (bytes is { Length: >= 2 } && bytes[0] == 0xff && bytes[1] == 0xd8) settings.Format = MagickFormat.Jpeg;
         return settings;
     }
 
@@ -177,21 +182,19 @@ public sealed class ImageLoader
 
     public async Task<BitmapSource> ThumbnailAsync(string path, CancellationToken token)
     {
-        await _thumbnailSlots.WaitAsync(token).ConfigureAwait(false);
-        try
+        return await _thumbnails.RunAsync(path, bytes =>
         {
-            return await Task.Run(() =>
-            {
-                token.ThrowIfCancellationRequested();
-                using var file = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-                using var image = new MagickImage(file, ReadSettings(path));
-                image.AutoOrient();
-                image.Thumbnail(new MagickGeometry(640, 640) { Greater = true });
-                NormalizeColor(image);
-                token.ThrowIfCancellationRequested();
-                return ToBitmap(image);
-            }, token).ConfigureAwait(false);
-        }
-        finally { _thumbnailSlots.Release(); }
+            using var info = new MagickImage();
+            info.Ping(bytes, ReadSettings(path, bytes));
+            return checked((long)info.Width * info.Height * 8);
+        }, bytes =>
+        {
+            token.ThrowIfCancellationRequested();
+            using var image = new MagickImage(bytes, ReadSettings(path, bytes));
+            image.AutoOrient();
+            image.Thumbnail(new MagickGeometry(640, 640) { Greater = true });
+            NormalizeColor(image);
+            return ToBitmap(image);
+        }, token).ConfigureAwait(false);
     }
 }

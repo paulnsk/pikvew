@@ -17,6 +17,8 @@ A Windows 10/11 image browser and viewer with GIF/WebP playback, seeking, zoom a
 | Arrows / drag | Pan |
 | Ctrl+Left / Right | Rotate 90 degrees |
 | Ctrl+arrows in browser | Navigate folder tree without moving focus |
+| Arrows / typing in browser | Navigate / find a name prefix in the pane under the mouse (otherwise focused pane) |
+| F2 / two slow clicks on a name | Rename a file or folder in place; Enter saves, Esc cancels |
 | Alt+Up / Left / Right | Parent folder / back / forward |
 | I | Show / hide metadata; Pin keeps the panel open |
 | Space / , / . | Play-pause / previous frame / next frame |

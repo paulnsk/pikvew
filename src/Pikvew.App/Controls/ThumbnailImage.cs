@@ -10,6 +10,7 @@ public sealed class ThumbnailImage : Image
     public ThumbnailImage()
     {
         Loaded += (_, _) => Load();
+        IsVisibleChanged += (_, _) => { if (IsVisible) Load(); else Cancel(); };
         Unloaded += (_, _) => { Cancel(); Source = null; };
         DataContextChanged += (_, _) => { if (IsLoaded) Load(); };
     }
@@ -19,7 +20,7 @@ public sealed class ThumbnailImage : Image
     {
         Cancel();
         Source = null;
-        if (DataContext is not FileItem { Supported: true } item) return;
+        if (!IsVisible || DataContext is not FileItem { Supported: true } item) return;
         var request = _request = new CancellationTokenSource();
         var token = request.Token;
         try

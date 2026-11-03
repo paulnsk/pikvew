@@ -14,8 +14,9 @@ public sealed class DirectoryNode : ObservableObject
     private Task? _loadingTask;
     private Task? _probeTask;
     private int _probeVersion;
-    public string Path { get; }
-    public string Name { get; }
+    private int _pathVersion;
+    public string Path { get; private set; }
+    public string Name { get; private set; }
     public string? Error { get; private set; }
     public bool IsSelected { get => _selected; set => Set(ref _selected, value); }
     public ObservableCollection<DirectoryNode> Children { get; } = [];
@@ -30,6 +31,30 @@ public sealed class DirectoryNode : ObservableObject
         Path = path;
         Name = name ?? System.IO.Path.GetFileName(path.TrimEnd('\\', '/'));
         if (!placeholder) Children.Add(new DirectoryNode("", "Loading…", true));
+    }
+
+    public void RenamePath(string oldPath, string newPath)
+    {
+        var remapped = PathRename.Remap(Path, oldPath, newPath, true);
+        if (remapped != Path)
+        {
+            Path = remapped;
+            Name = System.IO.Path.GetFileName(Path.TrimEnd('\\', '/'));
+            ++_pathVersion;
+            ++_probeVersion;
+            _probeTask = null;
+            _loadingTask = null;
+            if (Children.Any(child => child.Path.Length == 0)) _loaded = false;
+            Error = null;
+            Raise(nameof(Path)); Raise(nameof(Name)); Raise(nameof(Error));
+        }
+        foreach (var child in Children) child.RenamePath(oldPath, newPath);
+        var ordered = Children.OrderBy(child => child.Name, NaturalNameComparer.Instance).ToArray();
+        for (var index = 0; index < ordered.Length; index++)
+        {
+            var previous = Children.IndexOf(ordered[index]);
+            if (previous != index) Children.Move(previous, index);
+        }
     }
 
     public Task LoadAsync(bool refresh = false)
@@ -76,17 +101,20 @@ public sealed class DirectoryNode : ObservableObject
 
     private async Task LoadCoreAsync()
     {
+        var version = _pathVersion;
+        var path = Path;
         try
         {
             DirectoryNode[] children;
             await EnumerationSlots.WaitAsync();
             try
             {
-                children = await Task.Run(() => Directory.EnumerateDirectories(Path)
+                children = await Task.Run(() => Directory.EnumerateDirectories(path)
                     .OrderBy(p => System.IO.Path.GetFileName(p), NaturalNameComparer.Instance)
                     .Select(p => new DirectoryNode(p)).ToArray());
             }
             finally { EnumerationSlots.Release(); }
+            if (version != _pathVersion) return;
             // Preserve existing containers and selection when a directory gains children.
             var wanted = children.Select(child => child.Path).ToHashSet(StringComparer.OrdinalIgnoreCase);
             for (var index = Children.Count - 1; index >= 0; index--)
@@ -105,6 +133,7 @@ public sealed class DirectoryNode : ObservableObject
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
         {
+            if (version != _pathVersion) return;
             Error = exception.Message;
             Raise(nameof(Error));
             Children.Clear();

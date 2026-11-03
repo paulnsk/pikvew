@@ -1,8 +1,76 @@
 # Pikvew — состояние и требования
 
-Обновлено: 2026-11-01. Репозиторий: O:\STUDIO3\Repos\paulnsk\pikvew.
+Обновлено: 2026-11-04. Репозиторий: O:\STUDIO3\Repos\paulnsk\pikvew.
 
 ## Текущее состояние
+
+- Финальный прогон пакета 0.2.x: 71 passed /4 Windows integration skipped, 75 total,
+  artifacts/test-results/release-02.trx. Включает actual private JPEG decode/thumbnail,
+  Ctrl-tree без H/V flicker, F2 file+current-directory, selection/history после rename,
+  default delete action слева /Cancel справа. Скриншоты НЕ создавались.
+  UI fixture после Restore() повторно уводит окно за экран, чтобы реальный курсор
+  не менял hover routing; async navigation ожидается до конца, без100ms предположения.
+  F2 ищет уже материализованный visual container и не перераскрывает текущее дерево.
+  GitHub preflight успешен, далее commit + release.ps1 (minor2, build1).
+
+- Пакет 0.2.x реализован, идёт финальная проверка перед релизом. Rider solution Pikvew
+  подтверждён. Его PSI отдельных файлов устарел: ImageLoader diagnostics ссылается на
+  уже удалённый _thumbnailSlots и старые строки; новые partial files ещё не индексирует.
+  Не применять эти quick fixes; компилятор актуального исходника проходит.
+- Реализованы inline rename (F2/slow click), hover routing arrows/text/F2, visible-tree
+  prefix search, Ctrl-tree local selection без прокрутки предков, first supported image,
+  delete confirm action слева/default, Cancel справа/Esc, suppression double Open/OpenWith.
+- JPEG SOI с посторонним текстом после FF D8: принудительный JPEG codec только по SOI,
+  не по расширению. Actual private JPEG успешно декодирован + thumbnail без отображения.
+- Thumbnail pipeline: read/decode раздельно; read limit адаптируется per drive/share,
+  decode max half CPU, encoded queue256MiB, decoded budget256MiB..1GiB (oversized alone),
+  jobs max2*halfCPU. Hidden browser отменяет thumbnail jobs. Benchmark generated48JPEG
+  1920x1080, warm cache: old2slots2.908s/cpu5.812s; new0.673s/cpu6.047s,
+  PeakDecoders10/CPUs20. Benchmark artifacts/thumbnail-bench (ignored). Slow network
+  controller covered by deterministic test, real UNC not available here.
+- Первоначально71 passed/4 OS integration skipped. Расширен UI regression Ctrl-tree /
+  file+current-folder inline rename; UI test теперь await навигации вместо100ms race.
+  Весь UI smoke по умолчанию НЕ делает screenshots; opt-in PIKVEW_UI_SCREENSHOTS=1.
+
+- Rider MCP восстановлен: list_solutions подтвердил Pikvew.slnx, путь O:\STUDIO3\Repos\paulnsk\pikvew,
+  22 tools. Начата реализация одобренного пакета 0.2.x. Скриншоты частных файлов запрещены.
+  Источник Ctrl-navigation flicker: NavigateTreeAsync вызывает полную RevealTreeAsync,
+  которая прокручивает каждого предка; для локальных moves сделать только selection /
+  минимальный BringIntoView конечного узла, не полный reveal.
+  Enter всегда preview; hover routing только arrows/text/F2, textbox edit имеет приоритет.
+  Rename labels в tree и tiles, F2 browser only, remap paths/settings/history при rename.
+  Thumbnails: раздельные read/decode очереди, per-volume adaptive read concurrency,
+  decode до половины CPU, bounded encoded-memory queue; измерить read/decode отдельно.
+
+- Ответы на вопросы получены: следующий пакет ОДОБРЕН, включая GitHub release
+  0.2.x. Rename inline, file stem selected without extension, folder name whole,
+  slow clicks только по подписи, fast double-click opens, current item only;
+  F2 только browser (НЕ viewer). Ctrl+arrows всегда tree; обычные arrows/text/F2
+  target hover panel, иначе real focus. Enter открывает current preview card даже
+  при mouse-over tree. После tree navigation — первая supported image, иначе первый
+  обычный файл. Prefix search starts-with/case-insensitive, 1s timeout, Backspace,
+  только видимые раскрытые узлы. Подтверждено «делаем релиз».
+- Повторная проверка после просьбы «Проверь райдер щас»: ALL_TOOLS по name/description
+  rider|jetbrains|resharper по-прежнему пуст. Нельзя вызвать list_solutions, соединение
+  с Pikvew не подтверждено. До восстановления Rider либо явного разрешения обходиться
+  без него изменения исходного кода НЕ начаты; пока изменены только заметки/правила.
+
+- 2026-11-04: пользователь запросил следующий пакет и сначала вопросы; код пока
+  НЕ менять. F2/два медленных клика rename файлов/папок; Ctrl+arrows tree flicker /
+  node scroll to bottom; mouse-hover panel determines keyboard target (fallback real
+  focus); incremental prefix search tree+tiles (fo->forest, fot->fotki), subtle hover
+  border. После Ctrl+tree navigation выбрать первый файл для Enter. Delete confirm
+  action слева/default, Cancel справа (переопределяет прежний Cancel-default).
+  Double-click Open не должен запускать дважды, проверить OpenWith. Adaptive thumbnail
+  I/O/decode concurrency до половины CPU для local, не перегружать медленный network.
+  K:\DELETEME\154713090178_x1x.jpg не декодируется. Файл доступен, header 869343 bytes:
+  JPEG SOI FF D8, затем ASCII " end='w'?>", затем FF DB. Возможная причина — strict
+  format autodetection на нетипичном заголовке; декодирование ещё НЕ проверялось.
+- ПРИВАТНОСТЬ: не делать screenshots с изображениями пользователя. Для UI screenshots
+  только публичные образцы, анализ частного JPEG только без визуализации. В AGENTS
+  правило добавлено. Pending уточнения rename UX/search scope/Enter routing/first
+  supported image vs any file/release scope. Rider tools в текущем наборе не обнаружены;
+  перед реализацией восстановить Rider MCP или получить разрешение обходиться без него.
 
 - **Седьмой проход завершён, GitHub release 0.1.1 опубликован и проверен.**
   https://github.com/paulnsk/pikvew/releases/tag/v0.1.1
